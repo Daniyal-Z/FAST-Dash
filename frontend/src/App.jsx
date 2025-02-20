@@ -90,7 +90,7 @@ const App = () => {
       const courseCodes = courses.map((course) => course.split(" - ")[0]);
       const response = await fetch(
         // `http://127.0.0.1:8000/datesheet?courses=${courseCodes.join(",")}`
-         `https://fast-dash.onrender.com//datesheet?courses=${courseCodes.join(",")}`,
+         `https://fast-dash.onrender.com/datesheet?courses=${courseCodes.join(",")}`,
         {
           method: "GET",
         }
