@@ -55,7 +55,8 @@ const App = () => {
 
     try {
       const response = await fetch(
-        `http://127.0.0.1:8000/courses?query=${query}`
+        // `http://127.0.0.1:8000/courses?query=${query}`
+        `https://fast-dash.onrender.com/courses?query=${query}`
       );
       if (!response.ok) throw new Error("Failed to fetch suggestions");
 
@@ -88,7 +89,8 @@ const App = () => {
     try {
       const courseCodes = courses.map((course) => course.split(" - ")[0]);
       const response = await fetch(
-        `http://127.0.0.1:8000/datesheet?courses=${courseCodes.join(",")}`,
+        // `http://127.0.0.1:8000/datesheet?courses=${courseCodes.join(",")}`
+         `https://fast-dash.onrender.com//datesheet?courses=${courseCodes.join(",")}`,
         {
           method: "GET",
         }
