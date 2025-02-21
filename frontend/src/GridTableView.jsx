@@ -13,23 +13,6 @@ const GridTableView = ({ dataSheet, timeSlots }) => {
   // Extract unique days from dataSheet
   const days = [...new Set(dataSheet.map((item) => item.Day))];
 
-  // Prepare table data
-  const tableData = days.map((day) => {
-    const date = dataSheet.find((item) => item.Day === day)?.Date || ""; // Extract date for the day
-    return [
-      day, // Day column
-      date, // Date column
-      ...timeSlots.map((slot) => {
-        const courses = dataSheet
-          .filter((item) => item.Day === day && item["Time Slot"] === slot)
-          .map((course) => `${course["Course Code"]} - ${course["Course Name"]}`);
-        
-        return courses.length > 0 ? courses.join("<br>") : ""; // Join courses with line breaks
-      }),
-    ];
-  });
-  
-
   // Generate consistent colors for courses using useMemo
   const courseColors = useMemo(() => {
     const colors = {};
@@ -42,15 +25,41 @@ const GridTableView = ({ dataSheet, timeSlots }) => {
     return colors;
   }, [dataSheet]);
 
-  // Prepare cell colors
-  const cellColors = tableData.map((row) =>
-    row.map((cell, colIndex) => {
-      if (colIndex < 2) return "white"; // No color for Day and Date columns
-      return courseColors[cell] || "white"; // Apply course color or default to white
-    })
-  );
+  // Prepare table data and cell colors
+  const tableData = [];
+  const cellColors = [];
 
-  // Debugging: Log the data
+  days.forEach((day) => {
+    const date = dataSheet.find((item) => item.Day === day)?.Date || "";
+    const rowCourses = {}; // To store courses per time slot
+
+    // Organize courses by time slot
+    timeSlots.forEach((slot) => {
+      const courses = dataSheet.filter((item) => item.Day === day && item["Time Slot"] === slot);
+      rowCourses[slot] = courses.length > 0 ? courses : [null]; // Ensure at least one empty row
+    });
+
+    // Determine the maximum number of courses in a single time slot
+    const maxCourses = Math.max(...Object.values(rowCourses).map((c) => c.length));
+
+    // Create separate rows if multiple courses share a time slot
+    for (let i = 0; i < maxCourses; i++) {
+      const row = [i === 0 ? day : "", i === 0 ? date : ""]; // Only show Day/Date in the first row
+      const colors = ["white", "white"]; // No color for Day & Date columns
+
+      timeSlots.forEach((slot) => {
+        const course = rowCourses[slot][i] || "";
+        const courseKey = course ? `${course["Course Code"]} - ${course["Course Name"]}` : "";
+        row.push(courseKey);
+        colors.push(courseKey ? courseColors[courseKey] : "white");
+      });
+
+      tableData.push(row);
+      cellColors.push(colors);
+    }
+  });
+
+  // Debugging logs
   console.log("Data Sheet:", dataSheet);
   console.log("Time Slots:", timeSlots);
   console.log("Table Data:", tableData);
