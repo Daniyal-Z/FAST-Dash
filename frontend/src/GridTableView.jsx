@@ -20,13 +20,15 @@ const GridTableView = ({ dataSheet, timeSlots }) => {
       day, // Day column
       date, // Date column
       ...timeSlots.map((slot) => {
-        const course = dataSheet.find(
-          (item) => item.Day === day && item["Time Slot"] === slot
-        );
-        return course ? `${course["Course Code"]} - ${course["Course Name"]}` : "";
+        const courses = dataSheet
+          .filter((item) => item.Day === day && item["Time Slot"] === slot)
+          .map((course) => `${course["Course Code"]} - ${course["Course Name"]}`);
+        
+        return courses.length > 0 ? courses.join("<br>") : ""; // Join courses with line breaks
       }),
     ];
   });
+  
 
   // Generate consistent colors for courses using useMemo
   const courseColors = useMemo(() => {
