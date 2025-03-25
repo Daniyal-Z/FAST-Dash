@@ -79,6 +79,23 @@ const GridTableView = ({ dataSheet, timeSlots }) => {
 
   return (
     <div style={{ width: "100%", overflowX: "auto", padding: "20px" }}>
+      <div style={{ textAlign: "center", marginTop: "20px" }}>
+      <button
+        onClick={handleDownload}
+        style={{
+          padding: "10px 20px",
+          backgroundColor: "#4CAF50",
+          color: "white",
+          border: "none",
+          borderRadius: "5px",
+          cursor: "pointer",
+          fontSize: "16px",
+        }}
+      >
+        Download Image
+      </button>
+      </div>
+      
       <div id="date-sheet-plot">
       <Plot
         data={[
@@ -125,22 +142,6 @@ const GridTableView = ({ dataSheet, timeSlots }) => {
       />
       </div>
 
-      <div style={{ textAlign: "center", marginTop: "20px" }}>
-      <button
-        onClick={handleDownload}
-        style={{
-          padding: "10px 20px",
-          backgroundColor: "#4CAF50",
-          color: "white",
-          border: "none",
-          borderRadius: "5px",
-          cursor: "pointer",
-          fontSize: "16px",
-        }}
-      >
-        Download Image
-      </button>
-      </div>
     </div>
   );
 };
