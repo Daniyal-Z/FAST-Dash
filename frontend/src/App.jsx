@@ -12,6 +12,18 @@ const generateColor = (text) => {
   return `hsl(${hue}, 70%, 80%)`; // Keep a light color tone
 };
 
+const handleDownload = () => {
+  const plotDiv = document.getElementById("date-sheet-plot");
+  if (plotDiv) {
+    const downloadButton = plotDiv.querySelector('[data-title="Download plot as a png"]');
+    if (downloadButton) {
+      downloadButton.click();
+    } else {
+      alert("Download button not found. Try clicking on the plot first.");
+    }
+  }
+};
+
 // Tag component for displaying and removing courses
 const Tag = ({ course, onRemove }) => {
   const tagStyle = {
@@ -170,6 +182,24 @@ const App = () => {
         >
           Toggle View
         </button>
+      </div>
+
+      // Download Button
+      <div style={{ textAlign: "center", marginTop: "20px" }}>
+      <button
+        onClick={handleDownload}
+        style={{
+          padding: "10px 20px",
+          backgroundColor: "#4CAF50",
+          color: "white",
+          border: "none",
+          borderRadius: "5px",
+          cursor: "pointer",
+          fontSize: "16px",
+        }}
+      >
+        Download Image
+      </button>
       </div>
 
       {dataSheet.length > 0 ? (

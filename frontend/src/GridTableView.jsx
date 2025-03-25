@@ -67,6 +67,7 @@ const GridTableView = ({ dataSheet, timeSlots }) => {
 
   return (
     <div style={{ width: "100%", overflowX: "auto", padding: "20px" }}>
+      <div id="date-sheet-plot">
       <Plot
         data={[
           {
@@ -110,6 +111,7 @@ const GridTableView = ({ dataSheet, timeSlots }) => {
         }}
         config={{ responsive: true }} // Make it responsive
       />
+      </div>
     </div>
   );
 };
