@@ -9,6 +9,18 @@ const getRandomColor = () => {
   return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
 };
 
+const handleDownload = () => {
+  const plotDiv = document.getElementById("date-sheet-plot");
+  if (plotDiv) {
+    const downloadButton = plotDiv.querySelector('[data-title="Download plot as a png"]');
+    if (downloadButton) {
+      downloadButton.click();
+    } else {
+      alert("Download button not found. Try clicking on the plot first.");
+    }
+  }
+};
+
 const GridTableView = ({ dataSheet, timeSlots }) => {
   // Extract unique days from dataSheet
   const days = [...new Set(dataSheet.map((item) => item.Day))];
@@ -111,6 +123,23 @@ const GridTableView = ({ dataSheet, timeSlots }) => {
         }}
         config={{ responsive: true }} // Make it responsive
       />
+      </div>
+
+      <div style={{ textAlign: "center", marginTop: "20px" }}>
+      <button
+        onClick={handleDownload}
+        style={{
+          padding: "10px 20px",
+          backgroundColor: "#4CAF50",
+          color: "white",
+          border: "none",
+          borderRadius: "5px",
+          cursor: "pointer",
+          fontSize: "16px",
+        }}
+      >
+        Download Image
+      </button>
       </div>
     </div>
   );
