@@ -19,6 +19,10 @@ app.add_middleware(
     allow_headers=["*"],  # Allows all headers
 )
 
+@app.get("/health")
+def health_check():
+    return {"status": "healthy"}
+
 @app.get("/datesheet")
 def get_datesheet(courses: str = Query("")):
     try:
