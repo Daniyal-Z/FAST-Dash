@@ -22,10 +22,22 @@ const handleDownload = () => {
 };
 
 const GridTableView = ({ dataSheet, timeSlots }) => {
-  // Extract unique days from dataSheet
-  const days = [...new Set(dataSheet.map((item) => item.Day))];
+  // Sort dataSheet by date first
+  const sortedData = [...dataSheet].sort((a, b) => {
+    return new Date(a.Date) - new Date(b.Date);
+  });
 
-  // Generate consistent colors for courses using useMemo
+  // Extract unique days in chronological order
+  const days = [];
+  const seenDays = new Set();
+  sortedData.forEach((item) => {
+    if (!seenDays.has(item.Day + item.Date)) {
+      seenDays.add(item.Day + item.Date);
+      days.push({ day: item.Day, date: item.Date });
+    }
+  });
+
+  // Generate consistent colors for courses
   const courseColors = useMemo(() => {
     const colors = {};
     dataSheet.forEach((item) => {
@@ -41,29 +53,35 @@ const GridTableView = ({ dataSheet, timeSlots }) => {
   const tableData = [];
   const cellColors = [];
 
-  days.forEach((day) => {
-    const date = dataSheet.find((item) => item.Day === day)?.Date || "";
-    const rowCourses = {}; // To store courses per time slot
-
-    // Organize courses by time slot
-    timeSlots.forEach((slot) => {
-      const courses = dataSheet.filter((item) => item.Day === day && item["Time Slot"] === slot);
-      rowCourses[slot] = courses.length > 0 ? courses : [null]; // Ensure at least one empty row
+  days.forEach(({ day, date }) => {
+    const dayItems = sortedData.filter((item) => item.Day === day && item.Date === date);
+    
+    // Create a map of time slots to courses for this day
+    const timeSlotMap = {};
+    timeSlots.forEach(slot => {
+      timeSlotMap[slot] = dayItems.filter(item => item["Time Slot"] === slot);
     });
 
-    // Determine the maximum number of courses in a single time slot
-    const maxCourses = Math.max(...Object.values(rowCourses).map((c) => c.length));
+    // Determine the maximum number of courses in any time slot for this day
+    const maxCourses = Math.max(...Object.values(timeSlotMap).map(courses => courses.length));
 
-    // Create separate rows if multiple courses share a time slot
+    // Create rows for this day
     for (let i = 0; i < maxCourses; i++) {
-      const row = [i === 0 ? day : "", i === 0 ? date : ""]; // Only show Day/Date in the first row
-      const colors = ["white", "white"]; // No color for Day & Date columns
+      const row = [i === 0 ? day : "", i === 0 ? date : ""];
+      const colors = ["white", "white"];
 
       timeSlots.forEach((slot) => {
-        const course = rowCourses[slot][i] || "";
-        const courseKey = course ? `${course["Course Code"]} - ${course["Course Name"]}` : "";
-        row.push(courseKey);
-        colors.push(courseKey ? courseColors[courseKey] : "white");
+        const courses = timeSlotMap[slot];
+        const course = courses[i] || null;
+        
+        if (course) {
+          const courseKey = `${course["Course Code"]} - ${course["Course Name"]}`;
+          row.push(courseKey);
+          colors.push(courseColors[courseKey]);
+        } else {
+          row.push("");
+          colors.push("white");
+        }
       });
 
       tableData.push(row);
