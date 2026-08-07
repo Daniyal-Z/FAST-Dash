@@ -8,7 +8,8 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "verify:parsers": "node scripts/verify-parsers.mjs"
+    "verify:parsers": "node scripts/verify-parsers.mjs",
+    "verify:supabase": "node scripts/verify-supabase.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.2",

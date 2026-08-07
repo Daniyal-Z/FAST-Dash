@@ -66,6 +66,14 @@ state instead of crashing.
    supabase functions deploy admin-invite
    ```
 6. Copy the project URL and anon key into `frontend/.env.local`.
+7. Check it:
+   ```bash
+   npm run verify:supabase
+   ```
+   This uses only the anon key — the same access a student's browser has — so
+   it confirms the tables exist, that anonymous visitors can read the datasets,
+   and, importantly, that they **cannot** write to them. It also flags whether
+   public signup is still enabled.
 
 The anon key is meant to be public. Row Level Security is the real boundary:
 reads are open, and every write requires a row in `public.admins`.
