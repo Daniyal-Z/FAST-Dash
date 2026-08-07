@@ -596,6 +596,8 @@ function DatesheetBuilder({ data, label, timetable, school, onChangeSchool, canC
             </div>
           )}
         </div>
+
+        <p className="source-note">Course titles, teachers, rooms and timings are shown as published by FAST NUCES. Any errors originate in the official sheet.</p>
       </main>
 
       {tooltip}

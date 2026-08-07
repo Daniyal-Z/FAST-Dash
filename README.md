@@ -168,3 +168,12 @@ nothing is published without a human confirming it first:
   claims 660 minutes, which the parser rejects as a data-entry error.
 - Sheet names differ per school, so the course-list sheets are identified by
   their header row (`Code` + `Course Title` + `Section`) rather than by name.
+
+Typos in the source survive on purpose. The parsers repair things that are
+plainly encoding damage — mojibake, HTML entities, doubled spaces — but never
+touch a spelling, so "Ideology and Consittution of Pakistan" and
+"Data Warehousing and Business Intellligence" appear exactly as the university
+published them. Correcting them here would put the site and the official sheet
+out of step, and a student comparing the two would have no way to tell which was
+wrong. Both schedule pages carry a line saying where the data comes from, so a
+misspelt course reads as the source's error rather than the site's.
