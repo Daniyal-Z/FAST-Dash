@@ -189,9 +189,36 @@
 
 @media (max-width:920px){
   .fsc-root{grid-template-columns:1fr;grid-template-rows:auto 1fr;height:auto;min-height:calc(100dvh - var(--nav-h))}
-  .fsc-root.panel-collapsed{grid-template-rows:0 1fr}
-  .panel{border-right:none;border-bottom:1px solid var(--line);max-height:52vh}
   .grid-wrap{padding-bottom:40px}
+
+  /* Stacked, the panel is a drawer above the schedule, so it folds upwards
+     rather than sideways. Driven by max-height because the row is auto-sized
+     and `auto` is not animatable — the row simply follows the panel. */
+  .panel{
+    border-right:none;
+    border-bottom:1px solid var(--line);
+    max-height:52vh;
+    overflow:hidden;
+    transition:max-height .26s cubic-bezier(.4,0,.2,1), padding .26s, border-color .26s;
+  }
+  .fsc-root.panel-collapsed{grid-template-rows:auto 1fr}
+  .fsc-root.panel-collapsed .panel{
+    max-height:0;
+    padding-top:0;
+    padding-bottom:0;
+    /* undo the sideways collapse the wide layout applies */
+    padding-left:18px;
+    padding-right:18px;
+    border-bottom-color:transparent;
+  }
+
+  /* The chevron replaces the sidebar glyph, and turns over to point the way
+     the drawer will move next. */
+  /* Scoped to the button so these beat the base rule further down the file,
+     which would otherwise win on source order at equal specificity. */
+  .fd-panel-toggle .fd-toggle-wide{display:none}
+  .fd-panel-toggle .fd-toggle-narrow{display:block}
+  .fd-panel-toggle.is-closed .fd-toggle-narrow{transform:rotate(180deg)}
 }
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 /* ---------------- WEEK GRID (time axis) ----------------
@@ -311,7 +338,8 @@
   transition: 0.15s;
 }
 .fd-panel-toggle:hover { color: var(--tx); border-color: rgba(255, 255, 255, 0.22); background: var(--panel-2); }
-.fd-panel-toggle svg { width: 17px; height: 17px; }
+.fd-panel-toggle svg { width: 17px; height: 17px; transition: transform 0.26s cubic-bezier(0.4, 0, 0.2, 1); }
+.fd-toggle-narrow { display: none; }
 /* In the panel header the toggle sits hard right of the brand. */
 .brand .fd-panel-toggle { margin-left: auto; }
 /* In the stage bar it leads, where the panel edge used to be. */
