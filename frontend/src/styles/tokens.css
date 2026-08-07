@@ -1,0 +1,461 @@
+/**
+ * The FAST-Dash design system.
+ *
+ * These tokens were the Timetable builder's private palette; they are hoisted
+ * to :root here so the landing page, the datesheet builder and the admin area
+ * all speak the same visual language. `@theme` re-exports them to Tailwind so
+ * utility classes such as `bg-panel` or `text-tx-2` resolve to the same values.
+ */
+
+:root {
+  /* surfaces */
+  --ink: #0f1220;
+  --panel: #171a2b;
+  --panel-2: #1c2033;
+  --panel-3: #20243a;
+  --day: #141726;
+
+  /* hairlines */
+  --line: rgba(255, 255, 255, 0.09);
+  --line-2: rgba(255, 255, 255, 0.06);
+
+  /* type */
+  --tx: #e8eaf2;
+  --tx-2: #9aa0b5;
+  --tx-3: #6b7189;
+
+  /* accents */
+  --acc: #7c9cff;
+  --acc-2: #9db4ff;
+  --clash: #ff6b81;
+  --ok: #5ddba0;
+
+  /* chrome */
+  --nav-h: 58px;
+
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+@theme {
+  --color-ink: #0f1220;
+  --color-panel: #171a2b;
+  --color-panel-2: #1c2033;
+  --color-panel-3: #20243a;
+  --color-tx: #e8eaf2;
+  --color-tx-2: #9aa0b5;
+  --color-tx-3: #6b7189;
+  --color-acc: #7c9cff;
+  --color-acc-2: #9db4ff;
+  --color-clash: #ff6b81;
+  --color-ok: #5ddba0;
+
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--ink);
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  background: var(--ink);
+  color: var(--tx);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* The signature 34px graph-paper texture, available to any page. */
+.fd-paper {
+  background-color: var(--ink);
+  background-image:
+    linear-gradient(var(--line-2) 1px, transparent 1px),
+    linear-gradient(90deg, var(--line-2) 1px, transparent 1px);
+  background-size: 34px 34px;
+}
+
+/* Shared motion. Also declared in timetable.css; identical definitions. */
+@keyframes pop {
+  from { opacity: 0; transform: translateY(-4px) scale(0.96); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(-8px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes drop {
+  from { opacity: 0; transform: translateY(-6px) scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes fdSpin {
+  to { transform: rotate(360deg); }
+}
+.fd-spin { animation: fdSpin 1.6s linear infinite; }
+
+/* ---------------------------------------------------------------- chrome */
+
+.fd-nav {
+  height: var(--nav-h);
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(20, 23, 38, 0.86);
+  backdrop-filter: blur(8px);
+  position: sticky;
+  top: 0;
+  z-index: 40;
+}
+
+.fd-mark {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.5px;
+  color: var(--ink);
+  background: linear-gradient(135deg, var(--acc), #b6c6ff);
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 4px 18px -6px var(--acc);
+  flex-shrink: 0;
+}
+
+.fd-navlink {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--tx-2);
+  text-decoration: none;
+  padding: 7px 11px;
+  border-radius: 9px;
+  transition: 0.15s;
+  white-space: nowrap;
+}
+.fd-navlink:hover { color: var(--tx); background: var(--panel); }
+.fd-navlink.on { color: var(--tx); background: var(--panel-2); box-shadow: 0 0 0 1px var(--line); }
+
+/* ---------------------------------------------------------- form controls */
+
+.fd-input {
+  width: 100%;
+  padding: 11px 13px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  color: var(--tx);
+  font-family: inherit;
+  font-size: 13.5px;
+  outline: none;
+  transition: border-color 0.18s, box-shadow 0.18s;
+}
+.fd-input::placeholder { color: var(--tx-3); }
+.fd-input:focus { border-color: var(--acc); box-shadow: 0 0 0 3px rgba(124, 156, 255, 0.16); }
+
+.fd-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--tx-3);
+  display: block;
+  margin-bottom: 7px;
+}
+
+.fd-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 18px;
+}
+
+.fd-note {
+  border-radius: 11px;
+  padding: 11px 13px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  border: 1px solid var(--line);
+}
+.fd-note-warn { border-color: rgba(255, 107, 129, 0.35); background: rgba(255, 107, 129, 0.07); color: #ffc3cc; }
+.fd-note-ok { border-color: rgba(93, 219, 160, 0.3); background: rgba(93, 219, 160, 0.07); color: #b6f0d6; }
+.fd-note-info { border-color: rgba(124, 156, 255, 0.3); background: rgba(124, 156, 255, 0.07); color: var(--acc-2); }
+
+/* ------------------------------------------------------- landing product tile */
+
+.fd-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 22px;
+  border-radius: 16px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--tx);
+  transition: transform 0.16s, border-color 0.16s, background 0.16s, box-shadow 0.16s;
+}
+.fd-tile:hover {
+  transform: translateY(-3px);
+  border-color: var(--acc);
+  background: var(--panel-2);
+  box-shadow: 0 18px 40px -24px var(--acc);
+}
+.fd-tile:nth-child(2) { animation-delay: 0.06s; }
+
+.fd-tile-glyph {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: rgba(124, 156, 255, 0.12);
+  color: var(--acc);
+  margin-bottom: 9px;
+}
+.fd-tile-glyph svg { width: 22px; height: 22px; }
+
+.fd-tile-name {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 21px;
+  letter-spacing: -0.02em;
+}
+.fd-tile-tagline { font-size: 13px; color: var(--acc-2); }
+.fd-tile-blurb { font-size: 13px; line-height: 1.6; color: var(--tx-2); }
+
+.fd-tile-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 9px;
+  margin-top: 13px;
+  padding-top: 13px;
+  border-top: 1px solid var(--line-2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.fd-tile-chip {
+  background: rgba(124, 156, 255, 0.14);
+  color: var(--acc-2);
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-weight: 600;
+}
+
+/* ------------------------------------------------------------------- admin */
+
+.fd-drop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 26px 18px;
+  border: 1px dashed var(--line);
+  border-radius: 13px;
+  background: rgba(124, 156, 255, 0.03);
+  cursor: pointer;
+  text-align: center;
+  transition: border-color 0.15s, background 0.15s;
+}
+.fd-drop:hover, .fd-drop.on {
+  border-color: var(--acc);
+  background: rgba(124, 156, 255, 0.08);
+}
+.fd-drop-glyph { font-size: 20px; color: var(--acc); line-height: 1; }
+.fd-drop-main { font-size: 13.5px; font-weight: 600; color: var(--tx); word-break: break-all; }
+.fd-drop-sub { font-size: 11.5px; color: var(--tx-3); }
+
+.fd-statgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(108px, 1fr));
+  gap: 9px;
+}
+.fd-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 11px 13px;
+  border-radius: 11px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+}
+.fd-stat-n {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 20px;
+  color: var(--tx);
+  line-height: 1.1;
+}
+.fd-stat-k {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--tx-3);
+}
+
+.fd-pillstat {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 3px 8px;
+  color: var(--tx-2);
+}
+.fd-pillstat b { color: var(--acc-2); font-weight: 600; }
+
+/* ------------------------------------------------------- confirm dialog -- */
+/* Sits on the shared `.modal` backdrop already defined in timetable.css. */
+
+.fd-confirm {
+  width: min(430px, calc(100vw - 32px));
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 30px 80px -20px rgba(0, 0, 0, 0.7);
+  text-align: center;
+}
+
+.fd-confirm-glyph {
+  width: 44px;
+  height: 44px;
+  margin: 0 auto 14px;
+  border-radius: 13px;
+  display: grid;
+  place-items: center;
+  font-size: 20px;
+  background: rgba(124, 156, 255, 0.13);
+  color: var(--acc);
+}
+.fd-confirm-glyph.danger {
+  background: rgba(255, 107, 129, 0.13);
+  color: var(--clash);
+}
+
+.fd-confirm-title {
+  margin: 0 0 8px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 17px;
+  letter-spacing: -0.01em;
+  color: var(--tx);
+}
+
+.fd-confirm-body {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--tx-2);
+}
+.fd-confirm-body strong { color: var(--tx); font-weight: 600; }
+.fd-confirm-body code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--acc-2);
+}
+
+.fd-confirm-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 22px;
+}
+.fd-confirm-actions > * { flex: 1; justify-content: center; }
+
+.fd-danger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: inherit;
+  font-weight: 600;
+  font-size: 13px;
+  border-radius: 10px;
+  padding: 10px 15px;
+  cursor: pointer;
+  transition: 0.15s;
+  background: var(--clash);
+  color: #2a0a11;
+  border: 1px solid var(--clash);
+}
+.fd-danger:hover:not(:disabled) {
+  background: #ff8496;
+  box-shadow: 0 6px 20px -8px var(--clash);
+}
+.fd-danger:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.fd-live {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 11px 13px;
+  border-radius: 11px;
+  background: rgba(93, 219, 160, 0.06);
+  border: 1px solid rgba(93, 219, 160, 0.28);
+}
+.fd-live-empty {
+  background: var(--panel-2);
+  border: 1px dashed var(--line);
+}
+.fd-live-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--ok);
+  box-shadow: 0 0 0 4px rgba(93, 219, 160, 0.16);
+  flex-shrink: 0;
+}
+.fd-live-main { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.fd-live-label {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 13.5px;
+  color: var(--tx);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fd-live-meta { font-family: var(--font-mono); font-size: 11px; color: var(--tx-3); }
+.fd-live-remove {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--tx-2);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: 0.15s;
+  white-space: nowrap;
+}
+.fd-live-remove:hover:not(:disabled) { color: var(--clash); border-color: var(--clash); }
+.fd-live-remove:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.fd-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

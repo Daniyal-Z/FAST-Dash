@@ -5,11 +5,11 @@ import reactHooks from 'eslint-plugin-react-hooks'
 import reactRefresh from 'eslint-plugin-react-refresh'
 
 export default [
-  { ignores: ['dist'] },
+  { ignores: ['dist', 'node_modules'] },
   {
     files: ['**/*.{js,jsx}'],
     languageOptions: {
-      ecmaVersion: 2020,
+      ecmaVersion: 'latest',
       globals: globals.browser,
       parserOptions: {
         ecmaVersion: 'latest',
@@ -17,22 +17,27 @@ export default [
         sourceType: 'module',
       },
     },
-    settings: { react: { version: '18.3' } },
     plugins: {
       react,
       'react-hooks': reactHooks,
       'react-refresh': reactRefresh,
     },
+    settings: { react: { version: 'detect' } },
     rules: {
       ...js.configs.recommended.rules,
-      ...react.configs.recommended.rules,
-      ...react.configs['jsx-runtime'].rules,
       ...reactHooks.configs.recommended.rules,
-      'react/jsx-no-target-blank': 'off',
-      'react-refresh/only-export-components': [
-        'warn',
-        { allowConstantExport: true },
-      ],
+      // Teaches no-unused-vars that a component referenced in JSX is used.
+      'react/jsx-uses-vars': 'error',
+      'react/jsx-uses-react': 'off',
+      'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
+      // Empty catch blocks are used deliberately where a failure is genuinely
+      // ignorable (storage blocked in private mode, sandboxed downloads).
+      'no-empty': ['error', { allowEmptyCatch: true }],
+      'no-unused-vars': ['error', { argsIgnorePattern: '^_', caughtErrors: 'none' }],
     },
+  },
+  {
+    files: ['scripts/**/*.{js,mjs}'],
+    languageOptions: { globals: globals.node },
   },
 ]

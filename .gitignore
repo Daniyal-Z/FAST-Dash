@@ -1,1 +1,33 @@
-node_modules/\n.venv/\n*.env\n__pycache__/\ndb.sqlite3
+# dependencies
+node_modules/
+
+# build output
+dist/
+build/
+
+# env / secrets
+.env
+.env.*
+!.env.example
+
+# python (legacy backend, removed)
+.venv/
+__pycache__/
+*.pyc
+db.sqlite3
+
+# editor / os
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# logs
+*.log
+npm-debug.log*
+
+# vercel
+.vercel
+
+# supabase local
+supabase/.temp/

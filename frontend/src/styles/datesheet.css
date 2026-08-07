@@ -1,0 +1,150 @@
+/* Datesheet builder. Reuses the timetable shell (.fsc-root, .panel, .stage)
+   and only adds what the exam schedule itself needs. */
+
+.ds-list {
+  padding: 0 26px 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.ds-day {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  animation: drop 0.3s ease backwards;
+}
+
+.ds-day-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 2px 2px 4px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: linear-gradient(var(--ink) 72%, transparent);
+}
+.ds-day-name {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--tx);
+}
+.ds-day-date {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--tx-3);
+}
+
+.ds-row {
+  display: grid;
+  grid-template-columns: 122px 78px 1fr auto auto;
+  align-items: center;
+  gap: 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  padding: 12px 12px 12px 14px;
+  position: relative;
+  overflow: hidden;
+  transition: border-color 0.14s, background 0.14s;
+}
+.ds-row:hover { background: var(--panel-3); }
+.ds-row-clash {
+  border-color: rgba(255, 107, 129, 0.45);
+  background: rgba(255, 107, 129, 0.06);
+}
+.ds-row-clash::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: var(--clash);
+}
+
+.ds-slot {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--tx-2);
+  white-space: nowrap;
+}
+.ds-code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--acc-2);
+  background: rgba(124, 156, 255, 0.12);
+  border-radius: 6px;
+  padding: 3px 8px;
+  text-align: center;
+}
+.ds-name {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 13.5px;
+  color: var(--tx);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ds-flag {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--clash);
+  border: 1px solid rgba(255, 107, 129, 0.4);
+  border-radius: 20px;
+  padding: 2px 8px;
+}
+.ds-x {
+  width: 22px; height: 22px;
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--tx-3);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  transition: 0.14s;
+}
+.ds-x:hover { color: var(--clash); border-color: var(--clash); }
+
+/* --- grid view tweaks --- */
+.ds-gh-day {
+  flex-direction: column;
+  gap: 2px;
+  justify-content: center;
+}
+.ds-gh-date {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--tx-3);
+}
+.ds-block {
+  background: var(--panel-2);
+  color: var(--tx);
+  border: 1px solid var(--line);
+}
+
+@media (max-width: 720px) {
+  .ds-row {
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      'slot   x'
+      'name   name'
+      'code   flag';
+    gap: 6px 10px;
+  }
+  .ds-slot { grid-area: slot; }
+  .ds-code { grid-area: code; justify-self: start; }
+  .ds-name { grid-area: name; white-space: normal; }
+  .ds-flag { grid-area: flag; }
+  .ds-x { grid-area: x; }
+  .ds-list { padding: 0 16px 26px; }
+}
