@@ -2,6 +2,8 @@ import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { useAllMeta, useDataset } from "../hooks/useDataset.js";
 import { useSchoolChoice } from "../hooks/useSchoolChoice.js";
 import SchoolPicker from "../components/SchoolPicker.jsx";
+import { TipHead, TipRow, TipNote } from "../components/Tooltip.jsx";
+import { useTooltip } from "../hooks/useTooltip.jsx";
 import { schoolShort } from "../lib/schools.js";
 import {
   EmptyDatasetScreen,
@@ -83,6 +85,7 @@ function TimetableBuilder({ data, label, school, onChangeSchool, canChangeSchool
   const [tab, setTab] = useState("main"); // main | additional | electives
   const [ready, setReady] = useState(false);
   const [pngPreview, setPngPreview] = useState(null);
+  const { bind, tooltip } = useTooltip();
 
   // Everything the export writes is driven by the published label, so the
   // image never claims to be a semester it isn't.
@@ -578,7 +581,8 @@ function TimetableBuilder({ data, label, school, onChangeSchool, canChangeSchool
                               background: it.o.bg,
                               color: it.o.text,
                             }}
-                            title={`${it.o.code ? it.o.code + " · " : ""}${it.o.title || it.o.course} (${it.o.section}) — ${it.o.instructor} @ ${it.room} · ${when}${it.meeting.duration ? ` · ${it.meeting.duration} min` : ""}`}
+                            tabIndex={0}
+                            {...bind(<BlockTip it={it} when={when} />)}
                           >
                             <span className="block-spine" style={{ background: it.o.text }} />
                             {it.o.code ? <div className="block-eyebrow">{it.o.code}</div> : null}
@@ -607,6 +611,8 @@ function TimetableBuilder({ data, label, school, onChangeSchool, canChangeSchool
           )}
         </div>
       </main>
+
+      {tooltip}
 
       {pngPreview && (
         <div className="modal" onClick={() => setPngPreview(null)}>
@@ -641,5 +647,48 @@ function CourseRow({ o, on, toggle, showSec }) {
       </span>
       <span className={"crow-tick" + (on ? " on" : "")}>{on ? "✓" : "+"}</span>
     </button>
+  );
+}
+
+const BUCKET_LABEL = { main: "Core", repeat: "Repeat", elective: "Elective" };
+
+/**
+ * What a block shows on hover. The block itself only has room for a short name
+ * and a room number, so this is where the full title, the exact times and the
+ * course's other weekly meeting live.
+ */
+function BlockTip({ it, when }) {
+  const o = it.o;
+  const others = o.meetings.filter(m => m !== it.meeting);
+  return (
+    <>
+      <TipHead code={o.code} title={o.title || o.course} />
+      <TipRow label="Section">{o.section}</TipRow>
+      <TipRow label="Teacher">{o.instructor}</TipRow>
+      <TipRow label="Room"><b>{it.room}</b></TipRow>
+      <TipRow label="Time">
+        <b>{it.meeting.day} {when}</b>
+        {it.meeting.duration ? ` · ${it.meeting.duration} min` : ""}
+      </TipRow>
+      <TipRow label="Type">
+        {BUCKET_LABEL[o.bucket] || o.bucket} · {o.prog} year {o.year}
+      </TipRow>
+      {others.length > 0 && (
+        <TipRow label="Also">
+          {others.map((m, i) => (
+            <span key={i}>
+              {i > 0 && ", "}
+              <b>{m.day} {m.end ? `${m.start}\u2013${m.end}` : m.time}</b>
+              {m.room !== it.room ? ` · ${m.room}` : ""}
+            </span>
+          ))}
+        </TipRow>
+      )}
+      {it.clash && (
+        <TipNote tone="warn">
+          Overlaps another course you&rsquo;ve added at this time.
+        </TipNote>
+      )}
+    </>
   );
 }

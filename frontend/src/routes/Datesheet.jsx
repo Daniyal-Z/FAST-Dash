@@ -3,6 +3,8 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAllMeta, useDataset } from '../hooks/useDataset.js'
 import { useSchoolChoice } from '../hooks/useSchoolChoice.js'
 import SchoolPicker from '../components/SchoolPicker.jsx'
+import { TipHead, TipRow, TipNote } from '../components/Tooltip.jsx'
+import { useTooltip } from '../hooks/useTooltip.jsx'
 import { ALL_SCHOOLS, schoolShort } from '../lib/schools.js'
 import {
   EmptyDatasetScreen,
@@ -101,6 +103,7 @@ function DatesheetBuilder({ data, label, timetable, school, onChangeSchool, canC
   const [query, setQuery] = useState('')
   const [view, setView] = useState('list') // list | grid
   const [pngPreview, setPngPreview] = useState(null)
+  const { bind, tooltip } = useTooltip()
 
   const exportFilename =
     'Datesheet_' + (label || 'datesheet').replace(/[^\w]+/g, '_').replace(/^_|_$/g, '') + '.png'
@@ -533,7 +536,12 @@ function DatesheetBuilder({ data, label, timetable, school, onChangeSchool, canC
                   {[...d.slots.entries()].map(([slot, list]) => (
                     <React.Fragment key={slot}>
                       {list.map((e) => (
-                        <div key={e.code + slot} className={'ds-row' + (list.length > 1 ? ' ds-row-clash' : '')}>
+                        <div
+                          key={e.code + slot}
+                          className={'ds-row' + (list.length > 1 ? ' ds-row-clash' : '')}
+                          tabIndex={0}
+                          {...bind(<ExamTip exam={e} day={d} clash={list.length > 1} others={list} />)}
+                        >
                           <span className="ds-slot">{slot}</span>
                           <span className="ds-code">{e.code}</span>
                           <span className="ds-name">{e.name}</span>
@@ -562,7 +570,12 @@ function DatesheetBuilder({ data, label, timetable, school, onChangeSchool, canC
                       return (
                         <div key={s} className={'cell' + (list.length > 1 ? ' cell-clash' : '')}>
                           {list.map((e) => (
-                            <div key={e.code} className="block ds-block" title={`${e.code} · ${e.name}`}>
+                            <div
+                              key={e.code}
+                              className="block ds-block"
+                              tabIndex={0}
+                              {...bind(<ExamTip exam={e} day={d} clash={list.length > 1} others={list} />)}
+                            >
                               <span className="block-spine" style={{ background: 'var(--acc)' }} />
                               <div className="block-eyebrow">{e.code}</div>
                               <div className="block-code">{e.name}</div>
@@ -579,6 +592,8 @@ function DatesheetBuilder({ data, label, timetable, school, onChangeSchool, canC
           )}
         </div>
       </main>
+
+      {tooltip}
 
       {pngPreview && (
         <div className="modal" onClick={() => setPngPreview(null)}>
@@ -638,4 +653,22 @@ function trunc(ctx, s, max) {
   let t = s
   while (t.length && ctx.measureText(t + '…').width > max) t = t.slice(0, -1)
   return t + '…'
+}
+
+/** Hover detail for an exam. The row truncates long course names; this does not. */
+function ExamTip({ exam, day, clash, others }) {
+  const clashing = others.filter(o => o.code !== exam.code)
+  return (
+    <>
+      <TipHead code={exam.code} title={exam.name} />
+      <TipRow label="Day">{day?.day ?? exam.day}</TipRow>
+      <TipRow label="Date"><b>{exam.date}</b></TipRow>
+      <TipRow label="Slot"><b>{exam.slot}</b></TipRow>
+      {clash && clashing.length > 0 && (
+        <TipNote tone="warn">
+          Same slot as {clashing.map(o => o.code).join(', ')}.
+        </TipNote>
+      )}
+    </>
+  )
 }
