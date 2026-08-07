@@ -48,6 +48,44 @@ create table if not exists public.upload_log (
 alter table public.upload_log
   add column if not exists action text not null default 'publish';
 
+-- ------------------------------------------------------- schools upgrade --
+--
+-- Each school publishes its own class timetable (FSC, FSM, DEE, DCE, DSH),
+-- while the exam datesheet is university-wide and covers every school at once
+-- — its course codes span CS, MG, EE, CV, ME and the rest. So a dataset is
+-- identified by kind AND school, with the datesheet filed under 'ALL'.
+--
+-- Deliberately no CHECK against a fixed list of schools: adding a department
+-- should not require a migration. The app offers a fixed set in its dropdown.
+
+alter table public.datasets
+  add column if not exists school text not null default 'ALL'
+  check (school ~ '^[A-Z]{2,6}$');
+
+alter table public.upload_log
+  add column if not exists school text;
+
+-- The only timetable that can exist from before this change is Computing's.
+update public.datasets set school = 'FSC' where kind = 'timetable' and school = 'ALL';
+
+-- Widen the primary key from (kind) to (kind, school). Guarded on the old
+-- single-column key so re-running this file is harmless.
+do $$
+declare
+  key_columns int;
+begin
+  select array_length(c.conkey, 1) into key_columns
+  from pg_constraint c
+  join pg_class t on t.oid = c.conrelid
+  join pg_namespace n on n.oid = t.relnamespace
+  where n.nspname = 'public' and t.relname = 'datasets' and c.contype = 'p';
+
+  if key_columns = 1 then
+    alter table public.datasets drop constraint datasets_pkey;
+    alter table public.datasets add primary key (kind, school);
+  end if;
+end $$;
+
 create index if not exists upload_log_created_at_idx
   on public.upload_log (created_at desc);
 

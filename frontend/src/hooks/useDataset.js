@@ -3,34 +3,45 @@ import { isConfigured } from '../lib/supabase.js'
 import { loadDataset, readCache } from '../lib/datasets.js'
 
 /**
- * Loads a published dataset.
+ * Loads a published dataset for one kind and school.
  *
  * The cached copy is shown immediately so a returning visitor sees their
  * timetable without waiting for the network, then the hook revalidates and
  * swaps in newer data if the admin has published since.
  *
- * status: 'loading' | 'ready' | 'empty' | 'error' | 'unconfigured'
+ * Pass a null school to stay idle — the school pickers use this while the
+ * visitor has not chosen yet, so nothing is downloaded prematurely.
+ *
+ * status: 'idle' | 'loading' | 'ready' | 'empty' | 'error' | 'unconfigured'
  */
-export function useDataset(kind) {
-  const cached = isConfigured ? readCache(kind) : null
-
-  const [row, setRow] = useState(cached)
-  const [status, setStatus] = useState(() => {
-    if (!isConfigured) return 'unconfigured'
-    return cached ? 'ready' : 'loading'
-  })
+export function useDataset(kind, school) {
+  const [row, setRow] = useState(null)
+  const [status, setStatus] = useState('loading')
   const [error, setError] = useState(null)
   const [nonce, setNonce] = useState(0)
 
   const refresh = useCallback(() => setNonce((n) => n + 1), [])
 
   useEffect(() => {
-    if (!isConfigured) return
-    let cancelled = false
+    if (!isConfigured) {
+      setStatus('unconfigured')
+      return
+    }
+    if (!school) {
+      setRow(null)
+      setStatus('idle')
+      return
+    }
 
+    // Paint from cache straight away, then revalidate.
+    const cached = readCache(kind, school)
+    setRow(cached)
+    setStatus(cached ? 'ready' : 'loading')
+
+    let cancelled = false
     ;(async () => {
       try {
-        const next = await loadDataset(kind)
+        const next = await loadDataset(kind, school)
         if (cancelled) return
         if (next) {
           setRow(next)
@@ -44,14 +55,14 @@ export function useDataset(kind) {
         if (cancelled) return
         // A stale cached copy beats an error screen.
         setError(err)
-        setStatus((prev) => (prev === 'ready' ? 'ready' : 'error'))
+        setStatus(cached ? 'ready' : 'error')
       }
     })()
 
     return () => {
       cancelled = true
     }
-  }, [kind, nonce])
+  }, [kind, school, nonce])
 
   return {
     data: row?.payload ?? null,
@@ -61,4 +72,42 @@ export function useDataset(kind) {
     error,
     refresh,
   }
+}
+
+/**
+ * Metadata for everything published, without any payloads.
+ *
+ * The school pickers need to know which schools have a timetable before
+ * downloading one, and this listing is about a kilobyte, so it is cheap to ask
+ * for on every page load.
+ *
+ * status: 'loading' | 'ready' | 'error' | 'unconfigured'
+ */
+export function useAllMeta() {
+  const [rows, setRows] = useState([])
+  const [status, setStatus] = useState(isConfigured ? 'loading' : 'unconfigured')
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    if (!isConfigured) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const { fetchAllMeta } = await import('../lib/datasets.js')
+        const data = await fetchAllMeta()
+        if (cancelled) return
+        setRows(data)
+        setStatus('ready')
+      } catch (err) {
+        if (cancelled) return
+        setError(err)
+        setStatus('error')
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  return { rows, status, error }
 }

@@ -317,6 +317,36 @@ body {
 }
 .fd-pillstat b { color: var(--acc-2); font-weight: 600; }
 
+/* ---------------------------------------------------------- school picker */
+
+.fd-school {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+  text-align: left;
+  padding: 17px 18px;
+  border-radius: 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--tx);
+  cursor: pointer;
+  transition: transform 0.15s, border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+.fd-school:hover {
+  transform: translateY(-2px);
+  border-color: var(--acc);
+  background: var(--panel-2);
+  box-shadow: 0 14px 34px -22px var(--acc);
+}
+.fd-school-code {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 17px;
+  letter-spacing: -0.01em;
+}
+.fd-school-name { font-size: 12.5px; color: var(--tx-2); line-height: 1.4; }
+
 /* ------------------------------------------------------- confirm dialog -- */
 /* Sits on the shared `.modal` backdrop already defined in timetable.css. */
 
@@ -426,6 +456,16 @@ body {
   white-space: nowrap;
 }
 .fd-live-meta { font-family: var(--font-mono); font-size: 11px; color: var(--tx-3); }
+.fd-live-school {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--ok);
+  background: rgba(93, 219, 160, 0.14);
+  border-radius: 5px;
+  padding: 1px 6px;
+  margin-right: 7px;
+}
 .fd-live-remove {
   background: transparent;
   border: 1px solid var(--line);

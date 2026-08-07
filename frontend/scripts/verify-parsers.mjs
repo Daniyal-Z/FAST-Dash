@@ -97,7 +97,10 @@ for (const o of got.offerings) {
       fieldDiffs.get(label).push(`${g.code} ${g.section}`)
     }
   }
-  if (!eq(o.meetings, g.meetings)) {
+  // The golden copy predates start/end/duration/span, so compare only the
+  // fields it actually has. Spans are asserted separately below.
+  const core = (ms) => ms.map(({ day, period, time, room }) => ({ day, period, time, room }))
+  if (!eq(core(o.meetings), g.meetings)) {
     const label = `meetings mismatch`
     if (!fieldDiffs.has(label)) fieldDiffs.set(label, [])
     fieldDiffs.get(label).push(
@@ -147,6 +150,42 @@ for (const k of ['bucket', 'prog', 'year']) {
   const g = tally(golden.offerings, k)
   const t = tally(got.offerings, k)
   eq(t, g) ? pass(`${k} distribution matches`) : fail(`${k}: got ${JSON.stringify(t)} expected ${JSON.stringify(g)}`)
+}
+
+/* -------------------------------------------------- multi-period spanning */
+console.log('\n\x1b[1mClasses that outrun their starting slot\x1b[0m')
+
+const allMeetings = got.offerings.flatMap((o) => o.meetings.map((m) => ({ o, m })))
+const spanned = allMeetings.filter(({ m }) => m.span > 1)
+
+// Band length is 90 minutes; anything longer has to cover more than one band.
+const wrongSpan = allMeetings.filter(({ m }) => {
+  if (!m.duration) return m.span !== 1
+  const [h, mm] = m.start.split(':').map(Number)
+  const startMins = h * 60 + mm
+  const end = startMins + m.duration
+  const expected = got.periods.filter((p) => {
+    const [from, to] = p.t.split('-').map((t) => {
+      const [ph, pm] = t.split(':').map(Number)
+      return ph * 60 + pm
+    })
+    return from < end && to > startMins
+  }).length
+  return m.span !== Math.max(1, expected)
+})
+
+wrongSpan.length === 0
+  ? pass('every span matches the class duration')
+  : fail(`${wrongSpan.length} meetings have a span that does not match their duration`)
+
+spanned.length > 0
+  ? pass(`${spanned.length} meetings span more than one slot`)
+  : fail('no multi-slot meetings found — the duration column is not being read')
+
+const noDuration = allMeetings.filter(({ m }) => !m.duration).length
+console.log(`      \x1b[2m${allMeetings.length - noDuration} of ${allMeetings.length} meetings have a duration; ${noDuration} do not\x1b[0m`)
+for (const { o, m } of spanned.slice(0, 3)) {
+  console.log(`      \x1b[2m${o.code} ${o.course} · ${m.day} ${m.start}-${m.end} (${m.duration}min) → periods ${m.period}..${m.period + m.span - 1}\x1b[0m`)
 }
 
 console.log('\n  deliberate deviations from the shipped data:')

@@ -191,3 +191,29 @@
   .grid-wrap{padding-bottom:40px}
 }
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+/* ---------------- MULTI-PERIOD CLASSES ----------------
+   A class longer than its starting band (a 170-minute lab, say) renders one
+   segment per band it covers. Squaring off the inner corners makes the run
+   read as a single bar across the columns, while keeping each segment a real
+   child of its own cell — so heights line up and anything clashing in the
+   later band still stacks underneath rather than being overlapped. */
+.block-start { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.block-middle { border-radius: 0; padding-left: 10px; }
+.block-end { border-top-left-radius: 0; border-bottom-left-radius: 0; padding-left: 10px; }
+
+/* Continuation segments carry no repeated text, so they need a floor to keep
+   them the same height as the segment they continue. */
+.block-middle, .block-end {
+  min-height: 62px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+.block-cont {
+  font-family: 'JetBrains Mono';
+  font-size: 9.5px;
+  font-weight: 600;
+  opacity: 0.5;
+  white-space: nowrap;
+}
+.block-runs { opacity: 0.75; }

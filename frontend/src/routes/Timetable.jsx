@@ -1,5 +1,8 @@
 import React, { useState, useMemo, useEffect, useCallback } from "react";
-import { useDataset } from "../hooks/useDataset.js";
+import { useAllMeta, useDataset } from "../hooks/useDataset.js";
+import { useSchoolChoice } from "../hooks/useSchoolChoice.js";
+import SchoolPicker from "../components/SchoolPicker.jsx";
+import { schoolShort } from "../lib/schools.js";
 import {
   EmptyDatasetScreen,
   ErrorScreen,
@@ -27,20 +30,46 @@ const YEAR_LABEL = { 1: "Year 1", 2: "Year 2", 3: "Year 3", 4: "Year 4", 5: "Yea
 const SEM_OF = { 1: "1st sem", 2: "2nd", 3: "3rd sem", 4: "4th", 5: "5th sem", 6: "6th", 7: "7th sem", 8: "8th", 9: "9th sem" };
 
 const STORAGE_KEY = "fastdash:timetable:selected";
+const SCHOOL_KEY = "fastdash:timetable:school";
 
-/** Route entry point: loads the published timetable, then renders the builder. */
-export default function Timetable() {
-  const { data, label, status, error, refresh } = useDataset("timetable");
-
-  if (status === "unconfigured") return <NotConfiguredScreen />;
-  if (status === "loading") return <LoadingScreen what="timetable" />;
-  if (status === "empty") return <EmptyDatasetScreen what="timetable" />;
-  if (status === "error") return <ErrorScreen error={error} onRetry={refresh} />;
-
-  return <TimetableBuilder data={data} label={label} />;
+function hhmmToMin(hhmm) {
+  const [h, m] = String(hhmm).split(":").map(Number);
+  return (h || 0) * 60 + (m || 0);
 }
 
-function TimetableBuilder({ data, label }) {
+/**
+ * Route entry point: choose a school, load that school's timetable, then hand
+ * off to the builder. The school is picked before anything is downloaded, so a
+ * visitor only ever fetches the one dataset they need.
+ */
+export default function Timetable() {
+  const meta = useAllMeta();
+  const { school, setSchool, published } = useSchoolChoice(SCHOOL_KEY, meta, "timetable");
+  const ds = useDataset("timetable", school);
+
+  if (meta.status === "unconfigured") return <NotConfiguredScreen />;
+  if (meta.status === "loading") return <LoadingScreen what="timetable" />;
+  if (meta.status === "error") return <ErrorScreen error={meta.error} />;
+  if (published.length === 0) return <EmptyDatasetScreen what="timetable" />;
+  if (!school) return <SchoolPicker published={published} onPick={setSchool} what="timetable" />;
+
+  if (ds.status === "idle" || ds.status === "loading") return <LoadingScreen what="timetable" />;
+  if (ds.status === "empty") return <EmptyDatasetScreen what="timetable" />;
+  if (ds.status === "error") return <ErrorScreen error={ds.error} onRetry={ds.refresh} />;
+
+  return (
+    <TimetableBuilder
+      key={school}
+      data={ds.data}
+      label={ds.label}
+      school={school}
+      onChangeSchool={() => setSchool(null)}
+      canChangeSchool={published.length > 1}
+    />
+  );
+}
+
+function TimetableBuilder({ data, label, school, onChangeSchool, canChangeSchool }) {
   const { days, periods, offerings } = data;
 
   const [selectedIds, setSelectedIds] = useState(() => new Set());
@@ -58,18 +87,21 @@ function TimetableBuilder({ data, label }) {
   const exportFilename =
     "Timetable_" + (label || "timetable").replace(/[^\w]+/g, "_").replace(/^_|_$/g, "") + ".png";
 
-  /* ---------- persistence ---------- */
+  /* ---------- persistence ----------
+     Keyed by school: offering ids are only unique within one school's
+     workbook, so a single shared key would mix two schools' selections. */
+  const storageKey = `${STORAGE_KEY}:${school}`;
   useEffect(() => {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) setSelectedIds(new Set(JSON.parse(raw)));
+      const raw = localStorage.getItem(storageKey);
+      setSelectedIds(raw ? new Set(JSON.parse(raw)) : new Set());
     } catch (e) { /* first run, or storage unavailable */ }
     setReady(true);
-  }, []);
+  }, [storageKey]);
   useEffect(() => {
     if (!ready) return;
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify([...selectedIds])); } catch (e) {}
-  }, [selectedIds, ready]);
+    try { localStorage.setItem(storageKey, JSON.stringify([...selectedIds])); } catch (e) {}
+  }, [selectedIds, ready, storageKey]);
 
   // Drop selections that are no longer in the published data, so a stale
   // localStorage entry from last semester cannot pin invisible courses.
@@ -137,16 +169,85 @@ function TimetableBuilder({ data, label }) {
   /* ---------- grid ---------- */
   const selected = useMemo(() => offerings.filter(o => selectedIds.has(o.id)), [offerings, selectedIds]);
   const alsoEnrolled = useMemo(() => selected.filter(o => !o.meetings.length), [selected]);
+  // A class occupies every period band it overlaps, not just the one it starts
+  // in — a 170-minute lab beginning at 11:30 runs to 14:20 and covers two.
+  // Each covered cell gets a segment of the same block so the bar reads as one
+  // continuous run, and so a clash in the *second* half is still detected.
   const grid = useMemo(() => {
-    const g = {}; days.forEach(d => { g[d] = {}; periods.forEach(p => (g[d][p.p] = [])); });
-    selected.forEach(o => o.meetings.forEach(m => { if (g[m.day] && g[m.day][m.period]) g[m.day][m.period].push({ o, room: m.room }); }));
+    const g = {};
+    days.forEach(d => { g[d] = {}; periods.forEach(p => (g[d][p.p] = [])); });
+    selected.forEach(o => o.meetings.forEach(m => {
+      const span = Math.max(1, m.span || 1);
+      for (let i = 0; i < span; i++) {
+        const period = m.period + i;
+        if (!g[m.day] || !g[m.day][period]) continue;
+        g[m.day][period].push({
+          o,
+          room: m.room,
+          meeting: m,
+          seg: span === 1 ? 'single' : i === 0 ? 'start' : i === span - 1 ? 'end' : 'middle',
+        });
+      }
+    }));
     return g;
   }, [selected, days, periods]);
 
+  /* ---------- clashes ----------
+     Compared as real time intervals, not as shared period bands. Once classes
+     span several bands, two of them routinely touch the same band without
+     overlapping at all — an 08:30-10:20 lecture and a 10:30-12:20 one both sit
+     in the 10:00-11:30 column but never collide. Band-level detection would
+     report that as a clash and quickly train people to ignore the warning. */
+  const bandBounds = useMemo(() => {
+    const m = {};
+    periods.forEach(p => {
+      const [from, to] = p.t.split("-");
+      m[p.p] = [hhmmToMin(from), hhmmToMin(to)];
+    });
+    return m;
+  }, [periods]);
+
+  const intervalOf = useCallback(meeting => {
+    const span = Math.max(1, meeting.span || 1);
+    const fallbackStart = bandBounds[meeting.period]?.[0] ?? 0;
+    const fallbackEnd = bandBounds[meeting.period + span - 1]?.[1] ?? fallbackStart;
+    const start = meeting.start ? hhmmToMin(meeting.start) : fallbackStart;
+    const end = meeting.end ? hhmmToMin(meeting.end) : fallbackEnd;
+    return [start, Math.max(end, start + 1)];
+  }, [bandBounds]);
+
+  const overlap = useCallback((a, b) => {
+    const [as, ae] = intervalOf(a), [bs, be] = intervalOf(b);
+    return as < be && bs < ae;
+  }, [intervalOf]);
+
+  /** True when two different courses in this cell actually collide in time. */
+  const cellClashes = useCallback(cell => {
+    for (let i = 0; i < cell.length; i++) {
+      for (let j = i + 1; j < cell.length; j++) {
+        if (cell[i].o.id === cell[j].o.id) continue;
+        if (overlap(cell[i].meeting, cell[j].meeting)) return true;
+      }
+    }
+    return false;
+  }, [overlap]);
+
   const conflicts = useMemo(() => {
-    let c = 0; days.forEach(d => periods.forEach(p => { const cell = grid[d][p.p]; const ids = new Set(cell.map(x => x.o.id)); if (ids.size > 1) c++; }));
-    return c;
-  }, [grid, days, periods]);
+    // Count each colliding pair once, however many bands they share.
+    const seen = new Set();
+    const byDay = {};
+    selected.forEach(o => o.meetings.forEach(m => ((byDay[m.day] ??= []).push({ o, m }))));
+    for (const list of Object.values(byDay)) {
+      for (let i = 0; i < list.length; i++) {
+        for (let j = i + 1; j < list.length; j++) {
+          if (list[i].o.id === list[j].o.id) continue;
+          if (!overlap(list[i].m, list[j].m)) continue;
+          seen.add([list[i].o.id, list[j].o.id].sort().join("|") + "@" + list[i].m.day);
+        }
+      }
+    }
+    return seen.size;
+  }, [selected, overlap]);
 
   /* ---------- actions ---------- */
   const toggle = useCallback(id => setSelectedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; }), []);
@@ -193,7 +294,12 @@ function TimetableBuilder({ data, label }) {
         const cx = gx + dayColW + pi * timeColW; const cell = grid[d][p.p];
         ctx.strokeStyle = "rgba(255,255,255,0.06)"; ctx.strokeRect(cx, yy, timeColW, rh);
         cell.forEach((it, k) => {
-          const bx = cx + 6, by = yy + 8 + k * 58, bw = timeColW - 12, bh = 50;
+          // Continuation segments are covered by the bar drawn from the cell
+          // where the class starts. `k` still comes from the unfiltered list so
+          // that a clashing course keeps its own lane and nothing overlaps.
+          if (it.seg === "middle" || it.seg === "end") return;
+          const span = Math.max(1, it.meeting?.span || 1);
+          const bx = cx + 6, by = yy + 8 + k * 58, bw = span * timeColW - 12, bh = 50;
           roundRect(ctx, bx, by, bw, bh, 8); ctx.fillStyle = it.o.bg; ctx.fill();
           ctx.fillStyle = it.o.text; roundRect(ctx, bx, by, 4, bh, 2); ctx.fill();
           ctx.fillStyle = it.o.text; ctx.font = "700 13px 'Space Grotesk', sans-serif";
@@ -243,7 +349,7 @@ function TimetableBuilder({ data, label }) {
       {/* ============ LEFT CONTROL PANEL ============ */}
       <aside className="panel">
         <header className="brand">
-          <div className="brand-mark">FSC</div>
+          <div className="brand-mark">{school}</div>
           <div>
             <div className="brand-title">Timetable Builder</div>
             <div className="brand-sub">{label || "Timetable"}</div>
@@ -271,7 +377,13 @@ function TimetableBuilder({ data, label }) {
             <div className="funnel">
               {/* breadcrumb of committed selections */}
               <div className="crumbs">
-                {prog && <button className="crumb" onClick={() => pickProg(null)}><b>{prog}</b><i>{PROG_META[prog]}</i><span className="crumb-x">↻</span></button>}
+                {canChangeSchool && (
+                  <button className="crumb" onClick={onChangeSchool} title="Change school">
+                    <b>{school}</b><i>{schoolShort(school)}</i><span className="crumb-x">↻</span>
+                  </button>
+                )}
+                {canChangeSchool && (prog || year || section) && <span className="crumb-sep">▸</span>}
+                {prog && <button className="crumb" onClick={() => pickProg(null)}><b>{prog}</b><i>{PROG_META[prog] || prog}</i><span className="crumb-x">↻</span></button>}
                 {year && <><span className="crumb-sep">▸</span><button className="crumb" onClick={() => pickYear(null)}><b>{YEAR_LABEL[year]}</b><span className="crumb-x">↻</span></button></>}
                 {section && <><span className="crumb-sep">▸</span><button className="crumb crumb-sec" onClick={() => setSection(null)}><b>{section}</b><span className="crumb-x">↻</span></button></>}
               </div>
@@ -409,22 +521,44 @@ function TimetableBuilder({ data, label }) {
                 <div className="gh gh-day">{d}</div>
                 {periods.map(p => {
                   const cell = grid[d][p.p];
-                  const clash = new Set(cell.map(x => x.o.id)).size > 1;
+                  const clash = cellClashes(cell);
                   return (
                     <div key={p.p} className={"cell" + (clash ? " cell-clash" : "")}>
-                      {cell.map((it, i) => (
-                        <div key={it.o.id + i} className="block" style={{ background: it.o.bg, color: it.o.text }} title={`${it.o.code ? it.o.code + " · " : ""}${it.o.title || it.o.course} (${it.o.section}) — ${it.o.instructor} @ ${it.room}`}>
-                          <span className="block-spine" style={{ background: it.o.text }} />
-                          {it.o.code ? <div className="block-eyebrow">{it.o.code}</div> : null}
-                          <div className="block-code">{it.o.course}</div>
-                          <div className="block-meta">
-                            <span className="block-sec">{it.o.section}</span>
-                            <span className="block-room">{it.room}</span>
+                      {cell.map((it, i) => {
+                        const head = it.seg === 'single' || it.seg === 'start';
+                        const when = it.meeting.end
+                          ? `${it.meeting.start}–${it.meeting.end}`
+                          : it.meeting.time;
+                        return (
+                          <div
+                            key={it.o.id + "-" + i}
+                            className={"block block-" + it.seg}
+                            style={{ background: it.o.bg, color: it.o.text }}
+                            title={`${it.o.code ? it.o.code + " · " : ""}${it.o.title || it.o.course} (${it.o.section}) — ${it.o.instructor} @ ${it.room} · ${when}${it.meeting.duration ? ` · ${it.meeting.duration} min` : ""}`}
+                          >
+                            {head && <span className="block-spine" style={{ background: it.o.text }} />}
+                            {head ? (
+                              <>
+                                {it.o.code ? <div className="block-eyebrow">{it.o.code}</div> : null}
+                                <div className="block-code">{it.o.course}</div>
+                                <div className="block-meta">
+                                  <span className="block-sec">{it.o.section}</span>
+                                  <span className="block-room">{it.room}</span>
+                                </div>
+                                <div className="block-inst">
+                                  {it.o.instructor}
+                                  {it.meeting.span > 1 && <span className="block-runs"> · {when}</span>}
+                                </div>
+                              </>
+                            ) : (
+                              // Continuation of the same class: no repeated text,
+                              // just enough to show the slot is taken.
+                              <div className="block-cont">{it.seg === 'end' ? 'ends ' + it.meeting.end : '·'}</div>
+                            )}
+                            <button className="block-x" onClick={() => toggle(it.o.id)} aria-label="Remove">×</button>
                           </div>
-                          <div className="block-inst">{it.o.instructor}</div>
-                          <button className="block-x" onClick={() => toggle(it.o.id)} aria-label="Remove">×</button>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   );
                 })}

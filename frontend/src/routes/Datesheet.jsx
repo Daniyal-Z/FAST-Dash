@@ -1,5 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { useDataset } from '../hooks/useDataset.js'
+
+import { useAllMeta, useDataset } from '../hooks/useDataset.js'
+import { useSchoolChoice } from '../hooks/useSchoolChoice.js'
+import SchoolPicker from '../components/SchoolPicker.jsx'
+import { ALL_SCHOOLS, schoolShort } from '../lib/schools.js'
 import {
   EmptyDatasetScreen,
   ErrorScreen,
@@ -31,21 +35,60 @@ const YEAR_LABEL = { 1: 'Year 1', 2: 'Year 2', 3: 'Year 3', 4: 'Year 4', 5: 'Yea
 const SEM_OF = { 1: '1st sem', 2: '2nd', 3: '3rd sem', 4: '4th', 5: '5th sem', 6: '6th', 7: '7th sem', 8: '8th', 9: '9th sem' }
 
 const STORAGE_KEY = 'fastdash:datesheet:selected'
+const SCHOOL_KEY = 'fastdash:timetable:school'
 
+/**
+ * The datesheet itself is university-wide — one sheet covering every school's
+ * courses. What is per-school is the *timetable* it borrows the
+ * programme/year/section funnel from, so the school step decides which
+ * timetable to download, not which datesheet.
+ *
+ * The school key is shared with the Timetable page on purpose: a student is in
+ * one school, and should not have to say so twice.
+ */
 export default function Datesheet() {
-  const ds = useDataset('datesheet')
-  const tt = useDataset('timetable')
+  const meta = useAllMeta()
+  const { school, setSchool, published } = useSchoolChoice(SCHOOL_KEY, meta, 'timetable')
+  const [skipped, setSkipped] = useState(false)
 
-  if (ds.status === 'unconfigured') return <NotConfiguredScreen />
-  // Wait for the timetable too, so the funnel does not pop in a moment later.
-  if (ds.status === 'loading' || tt.status === 'loading') return <LoadingScreen what="datesheet" />
+  const ds = useDataset('datesheet', ALL_SCHOOLS)
+  const tt = useDataset('timetable', skipped ? null : school)
+
+  if (meta.status === 'unconfigured') return <NotConfiguredScreen />
+  if (meta.status === 'loading' || ds.status === 'loading') return <LoadingScreen what="datesheet" />
   if (ds.status === 'empty') return <EmptyDatasetScreen what="datesheet" />
   if (ds.status === 'error') return <ErrorScreen error={ds.error} onRetry={ds.refresh} />
 
-  return <DatesheetBuilder data={ds.data} label={ds.label} timetable={tt.data} />
+  // Ask which school only when there is a timetable to load. Without one the
+  // page still works — you just search for your courses instead.
+  if (published.length > 0 && !school && !skipped) {
+    return (
+      <SchoolPicker
+        published={published}
+        onPick={setSchool}
+        what="timetable"
+        onSkip={() => setSkipped(true)}
+      />
+    )
+  }
+  if (!skipped && school && (tt.status === 'idle' || tt.status === 'loading')) {
+    return <LoadingScreen what="datesheet" />
+  }
+
+  return (
+    <DatesheetBuilder
+      key={school || 'search'}
+      data={ds.data}
+      label={ds.label}
+      timetable={skipped ? null : tt.data}
+      school={skipped ? null : school}
+      onChangeSchool={() => { setSkipped(false); setSchool(null) }}
+      canChangeSchool={published.length > 0}
+    />
+  )
 }
 
-function DatesheetBuilder({ data, label, timetable }) {
+function DatesheetBuilder({ data, label, timetable, school, onChangeSchool, canChangeSchool }) {
   const { slots, dates, exams, courses } = data
   const offerings = timetable?.offerings ?? null
 
@@ -337,7 +380,13 @@ function DatesheetBuilder({ data, label, timetable }) {
           <>
             <div className="funnel">
               <div className="crumbs">
-                {prog && <button className="crumb" onClick={() => pickProg(null)}><b>{prog}</b><i>{PROG_META[prog]}</i><span className="crumb-x">↻</span></button>}
+                {canChangeSchool && school && (
+                  <button className="crumb" onClick={onChangeSchool} title="Change school">
+                    <b>{school}</b><i>{schoolShort(school)}</i><span className="crumb-x">↻</span>
+                  </button>
+                )}
+                {canChangeSchool && school && (prog || year || section) && <span className="crumb-sep">▸</span>}
+                {prog && <button className="crumb" onClick={() => pickProg(null)}><b>{prog}</b><i>{PROG_META[prog] || prog}</i><span className="crumb-x">↻</span></button>}
                 {year && <><span className="crumb-sep">▸</span><button className="crumb" onClick={() => pickYear(null)}><b>{YEAR_LABEL[year]}</b><span className="crumb-x">↻</span></button></>}
                 {section && <><span className="crumb-sep">▸</span><button className="crumb crumb-sec" onClick={() => setSection(null)}><b>{section}</b><span className="crumb-x">↻</span></button></>}
               </div>

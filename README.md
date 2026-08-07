@@ -9,6 +9,12 @@ Two pages, one design language:
 - **Timetable** — your week as a grid, with clash detection and PNG export.
 - **Datesheet** — your exams in order, with same-slot clashes flagged.
 
+Each school publishes its own timetable (FSC, FSM, DEE, DCE, DSH), so a dataset
+is keyed by kind *and* school. The exam datesheet is the exception: it is issued
+once for the whole university — its course codes span CS, MG, EE, CV, ME and the
+rest — so it is filed under `ALL`. Students pick their school once and it is
+remembered across both pages.
+
 Each page shows whatever an administrator last published, and can be taken back
 down again from `/admin` when a sheet is out of date.
 
@@ -156,3 +162,9 @@ nothing is published without a human confirming it first:
   matched to the band that contains it rather than by an exact start time.
 - Course codes are not unique: `DS3004` is both a lecture and its lab, and
   `CSXXXX` is a placeholder covering four unrelated MCI courses.
+- Classes frequently outlast the slot they start in. The grid is built from
+  90-minute bands, but 125 courses run 170 minutes and a couple run 240, so
+  `Duration in Minutes` decides how many bands a class really occupies. One row
+  claims 660 minutes, which the parser rejects as a data-entry error.
+- Sheet names differ per school, so the course-list sheets are identified by
+  their header row (`Code` + `Course Title` + `Section`) rather than by name.

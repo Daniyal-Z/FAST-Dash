@@ -50,7 +50,7 @@ async function readFunctionError(error) {
 export async function listUploads(limit = 30) {
   const { data, error } = await supabase
     .from('upload_log')
-    .select('id, kind, action, label, filename, stats, created_at, created_by_email')
+    .select('id, kind, school, action, label, filename, stats, created_at, created_by_email')
     .order('created_at', { ascending: false })
     .limit(limit)
   if (error) throw error
@@ -58,10 +58,11 @@ export async function listUploads(limit = 30) {
 }
 
 export async function logUpload({
-  kind, label, filename, stats, userId, userEmail, action = 'publish',
+  kind, school, label, filename, stats, userId, userEmail, action = 'publish',
 }) {
   const { error } = await supabase.from('upload_log').insert({
     kind,
+    school: school ?? null,
     action,
     label,
     filename,
