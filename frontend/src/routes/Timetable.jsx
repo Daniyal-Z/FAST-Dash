@@ -39,6 +39,13 @@ const SCHOOL_KEY = "fastdash:timetable:school";
 /** Height of one lane: the block itself plus the gap beneath it. */
 const LANE_H = 84;
 
+/* Minimum width per period band. Sized so that the longest line a block
+   carries — "Instructor · 10:00-11:20" — still fits in the common case of an
+   80-minute class, which occupies only ~89% of its band. Blocks ellipsize
+   rather than wrap, and this grid gets screenshotted, so a truncated end time
+   would follow people into their saved images. */
+const MIN_BAND_W = 178;
+
 function hhmmToMin(hhmm) {
   const [h, m] = String(hhmm).split(":").map(Number);
   return (h || 0) * 60 + (m || 0);
@@ -329,7 +336,11 @@ function TimetableBuilder({ data, label, school, onChangeSchool, canChangeSchool
         ctx.globalAlpha = 0.85;
         ctx.fillText(trunc(ctx, it.o.section + " \u00b7 " + it.room, inner), bx + 12, by + 30);
         const when = it.meeting.end ? `${it.meeting.start}\u2013${it.meeting.end}` : it.meeting.time;
-        ctx.fillText(trunc(ctx, it.o.instructor + " \u00b7 " + when, inner), bx + 12, by + 44);
+        // Time drawn at a fixed right offset and the name truncated to
+        // what is left, so an over-long instructor note can never eat it.
+        const timeW = ctx.measureText(when).width;
+        ctx.fillText(when, bx + bw - 12 - timeW, by + 44);
+        ctx.fillText(trunc(ctx, it.o.instructor, Math.max(10, inner - timeW - 12)), bx + 12, by + 44);
         ctx.globalAlpha = 1;
       });
 
@@ -541,7 +552,7 @@ function TimetableBuilder({ data, label, school, onChangeSchool, canChangeSchool
 
         <div className="grid-wrap">
           <div className="grid-scroll">
-            <div className="tt" style={{ minWidth: `${92 + periods.length * 150}px` }}>
+            <div className="tt" style={{ minWidth: `${92 + periods.length * MIN_BAND_W}px` }}>
               <div className="tt-corner"><span>DAY</span><span className="corner-slash">/</span><span>TIME</span></div>
 
               <div className="tt-head">
@@ -598,7 +609,15 @@ function TimetableBuilder({ data, label, school, onChangeSchool, canChangeSchool
                               <span className="block-sec">{it.o.section}</span>
                               <span className="block-room">{it.room}</span>
                             </div>
-                            <div className="block-inst">{it.o.instructor} · {when}</div>
+                            {/* The time is pinned and the name ellipsizes, not the
+                                other way round: the instructor column sometimes
+                                holds a note rather than a name ("merged with
+                                Applied Prob BDS-7A"), which no sensible column
+                                width would ever fit. */}
+                            <div className="block-inst">
+                              <span className="block-inst-name">{it.o.instructor}</span>
+                              <span className="block-inst-time">{when}</span>
+                            </div>
                             <button className="block-x" onClick={() => toggle(it.o.id)} aria-label="Remove">×</button>
                           </div>
                         );
