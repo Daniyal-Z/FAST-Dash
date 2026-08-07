@@ -54,8 +54,9 @@ const COL = {
   code: 0, // A
   title: 1, // B
   section: 2, // C
+  instructor: 3, // D — full name, e.g. "Ms. Maham Naeem"
   shortTitle: 8, // I
-  shortInstructor: 9, // J
+  shortInstructor: 9, // J — abbreviated, e.g. "Maham N"
   duration: 11, // L — "Duration in Minutes", stored as a string
   day1: 12, // M
   slot1: 13, // N
@@ -486,7 +487,12 @@ export function parseTimetable(workbook) {
         prog,
         year,
         bucket,
-        instructor: cell(row, COL.shortInstructor) || 'TBA',
+        // Two names are kept because they serve different places: the blocks
+        // are narrow and want the abbreviation, while the tooltip has room for
+        // who the teacher actually is. Neither column is complete, so each
+        // falls back to the other.
+        instructor: cell(row, COL.shortInstructor) || cell(row, COL.instructor) || 'TBA',
+        instructorFull: cell(row, COL.instructor) || cell(row, COL.shortInstructor) || 'TBA',
         bg: color?.bg || FALLBACK_COLOR.bg,
         text: color?.text || FALLBACK_COLOR.text,
         unslotted: meetings.length === 0,

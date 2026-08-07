@@ -66,7 +66,7 @@ got.offerings.length === golden.offerings.length
 // Compare by content rather than by id, so a single insertion doesn't cascade
 // into 500 false diffs. The id is checked separately via ordering.
 const keyOf = (o) =>
-  [o.code, o.section, o.prog, o.year, o.bucket, o.instructor, o.course].join('|')
+  [o.code, o.section, o.prog, o.year, o.bucket, o.course].join('|')
 
 const goldenByKey = new Map()
 for (const o of golden.offerings) {
@@ -82,6 +82,7 @@ const FIELDS = [
 const missing = []
 const fieldDiffs = new Map()
 const extra = []
+let recoveredNames = 0
 
 for (const o of got.offerings) {
   const bucket = goldenByKey.get(keyOf(o))
@@ -91,7 +92,14 @@ for (const o of got.offerings) {
   }
   const g = bucket.shift()
   for (const f of FIELDS) {
-    if (o[f] !== g[f]) {
+    if (o[f] === g[f]) continue
+    // The original extraction read only the short-name column, so a course
+    // with just a full name was labelled TBA. Filling that in is intended.
+    if (f === 'instructor' && g.instructor === 'TBA' && o.instructor !== 'TBA') {
+      recoveredNames++
+      continue
+    }
+    {
       const label = `${f}: got ${JSON.stringify(o[f])} · golden ${JSON.stringify(g[f])}`
       if (!fieldDiffs.has(label)) fieldDiffs.set(label, [])
       fieldDiffs.get(label).push(`${g.code} ${g.section}`)
@@ -112,6 +120,8 @@ for (const [, left] of goldenByKey) missing.push(...left)
 
 missing.length === 0 ? pass('no golden offerings missing') : fail(`${missing.length} golden offerings not produced`)
 extra.length === 0 ? pass('no unexpected offerings') : fail(`${extra.length} offerings produced that are not in golden`)
+recoveredNames > 0 &&
+  pass(`${recoveredNames} offerings labelled TBA in the shipped data now name their teacher`)
 fieldDiffs.size === 0
   ? pass('all fields match on matched offerings')
   : fail(`${fieldDiffs.size} distinct field mismatches`)
@@ -187,6 +197,16 @@ console.log(`      \x1b[2m${allMeetings.length - noDuration} of ${allMeetings.le
 for (const { o, m } of spanned.slice(0, 3)) {
   console.log(`      \x1b[2m${o.code} ${o.course} · ${m.day} ${m.start}-${m.end} (${m.duration}min) → periods ${m.period}..${m.period + m.span - 1}\x1b[0m`)
 }
+
+/* --------------------------------------------------------- teacher names */
+const named = got.offerings.filter((o) => o.instructorFull && o.instructorFull !== 'TBA')
+const fuller = named.filter((o) => o.instructorFull !== o.instructor)
+
+named.length > 0
+  ? pass(`full teacher names on ${named.length} offerings (${fuller.length} longer than the short form)`)
+  : fail('no full teacher names read — check the "Instructor Name" column')
+
+console.log(`      \x1b[2me.g. ${fuller.slice(0, 3).map((o) => `${o.instructor} -> ${o.instructorFull}`).join('; ')}\x1b[0m`)
 
 console.log('\n  deliberate deviations from the shipped data:')
 for (const d of DELIBERATE_DEVIATIONS) console.log(`    · ${d}`)

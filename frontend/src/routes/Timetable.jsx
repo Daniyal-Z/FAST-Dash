@@ -664,14 +664,14 @@ function BlockTip({ it, when }) {
     <>
       <TipHead code={o.code} title={o.title || o.course} />
       <TipRow label="Section">{o.section}</TipRow>
-      <TipRow label="Teacher">{o.instructor}</TipRow>
+      <TipRow label="Teacher">{o.instructorFull || o.instructor}</TipRow>
       <TipRow label="Room"><b>{it.room}</b></TipRow>
       <TipRow label="Time">
         <b>{it.meeting.day} {when}</b>
         {it.meeting.duration ? ` · ${it.meeting.duration} min` : ""}
       </TipRow>
       <TipRow label="Type">
-        {BUCKET_LABEL[o.bucket] || o.bucket} · {o.prog} year {o.year}
+        {BUCKET_LABEL[o.bucket] || o.bucket} · {o.prog} Year {o.year}
       </TipRow>
       {others.length > 0 && (
         <TipRow label="Also">
