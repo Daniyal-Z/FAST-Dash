@@ -44,7 +44,22 @@ export default function Landing() {
     fetchAllMeta()
       .then((rows) => {
         if (cancelled) return
-        setMeta(Object.fromEntries(rows.map((r) => [r.kind, r])))
+        // Timetables are per school, so summarise rather than showing one row.
+        const timetables = rows.filter((r) => r.kind === 'timetable')
+        const newest = (list) =>
+          list.slice().sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1))[0]
+        setMeta({
+          timetable: timetables.length
+            ? {
+                label:
+                  timetables.length === 1
+                    ? `${timetables[0].school} · ${timetables[0].label}`
+                    : `${timetables.length} schools`,
+                updated_at: newest(timetables).updated_at,
+              }
+            : null,
+          datesheet: rows.find((r) => r.kind === 'datesheet') ?? null,
+        })
         setLoaded(true)
       })
       .catch(() => !cancelled && setLoaded(true))

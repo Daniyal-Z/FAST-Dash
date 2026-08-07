@@ -31,3 +31,9 @@ npm-debug.log*
 
 # supabase local
 supabase/.temp/
+
+# local test scaffolding — seeded fixtures and browser-automation output
+.playwright-mcp/
+**/public/__dev/
+*.png
+!frontend/public/*.svg

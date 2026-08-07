@@ -22,12 +22,17 @@ import {
   createWarnings,
   isBlankRow,
   normaliseTime,
+  pad2,
 } from './shared.js'
 
-/** Program sheets, in the order that produces the canonical offering ids. */
-const PROGRAM_SHEETS = ['CS', 'SE', 'DS', 'AI', 'CY', 'CI']
-
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+/**
+ * A class lasting longer than this is treated as a data-entry error rather than
+ * a real booking, and is reported instead of blocking out most of the week.
+ * The longest legitimate class observed is a 240-minute lab.
+ */
+const MAX_SENSIBLE_DURATION = 300
 
 /** Used when the workbook has no readable "Periods" row. */
 const DEFAULT_PERIODS = [
@@ -49,8 +54,10 @@ const COL = {
   code: 0, // A
   title: 1, // B
   section: 2, // C
+  instructor: 3, // D — full name, e.g. "Ms. Maham Naeem"
   shortTitle: 8, // I
-  shortInstructor: 9, // J
+  shortInstructor: 9, // J — abbreviated, e.g. "Maham N"
+  duration: 11, // L — "Duration in Minutes", stored as a string
   day1: 12, // M
   slot1: 13, // N
   venue1: 14, // O
@@ -171,6 +178,43 @@ function toMinutes(hhmm) {
   return h * 60 + m
 }
 
+function fromMinutes(mins) {
+  const m = ((mins % 1440) + 1440) % 1440
+  return `${pad2(Math.floor(m / 60))}:${pad2(m % 60)}`
+}
+
+/**
+ * Identifies the per-programme course-list sheets by their header row rather
+ * than by name.
+ *
+ * Every school names these differently — Computing uses CS, SE, DS, AI, CY, CI
+ * — so hardcoding them would mean this parser only ever worked for one school.
+ * What they share is the header row: a Code column, a Course Title column and a
+ * Section column. The room-by-time grids ("Combined TT", "CS TT") and the
+ * colour lookup tables have no such row and are skipped automatically.
+ *
+ * Returns sheets in workbook order, which is what fixes the offering ids.
+ */
+function findProgramSheets(workbook, readRows) {
+  const found = []
+
+  for (const name of workbook.SheetNames) {
+    const rows = readRows(name)
+    if (!rows || rows.length < 3) continue
+
+    for (let r = 0; r < Math.min(rows.length, 6); r++) {
+      const cells = (rows[r] || []).map((v) => (clean(v) || '').toLowerCase())
+      const has = (needle) => cells.some((c) => c === needle || c.startsWith(needle))
+      if (has('code') && has('course title') && has('section')) {
+        found.push({ name, headerRow: r })
+        break
+      }
+    }
+  }
+
+  return found
+}
+
 /** Semester number -> academic year. Semesters 1&2 are year 1, and so on. */
 function semToYear(sem) {
   return Math.ceil(sem / 2)
@@ -249,6 +293,21 @@ export function parseTimetable(workbook) {
     return band ? band.p : null
   }
 
+  /**
+   * Which period bands a class actually occupies.
+   *
+   * Most classes are 80 minutes and sit inside one 90-minute band, but labs run
+   * 170 or even 240 minutes and genuinely spill into the following bands. The
+   * sheet only records where a class *starts*, so without this a three-hour lab
+   * looks like a 90-minute one and the grid wrongly shows the student as free
+   * for the rest of it.
+   */
+  const coveredBands = (startMins, duration) => {
+    const endMins = startMins + (duration || 0)
+    const covered = bands.filter((b) => b.from < endMins && b.to > startMins)
+    return covered.length ? covered : bands.filter((b) => startMins >= b.from && startMins < b.to)
+  }
+
   const colorRows = sheetRows('ColorData')
   if (!colorRows) warnings.add('Sheet "ColorData" not found — all courses will use the fallback colour')
   const colors = readColorMap(colorRows, warnings)
@@ -280,19 +339,22 @@ export function parseTimetable(workbook) {
   const byKey = new Map()
   let nextId = 1
 
-  for (const sheetName of PROGRAM_SHEETS) {
+  const programSheets = findProgramSheets(workbook, sheetRows)
+  if (!programSheets.length) {
+    throw new Error(
+      'No course-list sheets found. Each programme sheet needs a header row ' +
+        'containing "Code", "Course Title" and "Section".',
+    )
+  }
+
+  for (const { name: sheetName, headerRow } of programSheets) {
     const rows = sheetRows(sheetName)
-    if (!rows) {
-      warnings.add(`Program sheet "${sheetName}" not found`)
-      continue
-    }
 
     let bucket = 'main'
     let batchYear = null
     let headerProg = null
 
-    // Row 1 is the banner and row 2 the column header, so data starts at index 2.
-    for (let r = 2; r < rows.length; r++) {
+    for (let r = headerRow + 1; r < rows.length; r++) {
       const row = rows[r]
       if (isBlankRow(row)) continue
 
@@ -341,6 +403,16 @@ export function parseTimetable(workbook) {
       }
       year = Math.min(Math.max(year, 1), 5)
 
+      // "Duration in Minutes" arrives as a string, and is per class meeting.
+      let duration = Number(String(cell(row, COL.duration) ?? '').replace(/[^\d]/g, '')) || null
+      if (duration && duration > MAX_SENSIBLE_DURATION) {
+        warnings.add(
+          `Implausible duration of ${duration} minutes — treated as a single slot`,
+          `${code} ${section}`,
+        )
+        duration = null
+      }
+
       const meetings = []
       for (const [dayCol, slotCol, venueCol] of [
         [COL.day1, COL.slot1, COL.venue1],
@@ -360,11 +432,22 @@ export function parseTimetable(workbook) {
           warnings.add(`Slot "${time}" matches no period band — course left unslotted`, `${code} ${section}`)
           continue
         }
+
+        const startMins = toMinutes(time)
+        const covered = coveredBands(startMins, duration)
+
         meetings.push({
           day,
           period,
           time: periods[period - 1].t,
           room: cell(row, venueCol) || 'TBA',
+          // The class's own times, which can start part-way through a band and
+          // finish part-way through a later one.
+          start: time,
+          end: duration ? fromMinutes(startMins + duration) : null,
+          duration,
+          // How many consecutive bands to draw across, starting at `period`.
+          span: Math.max(1, covered.length),
         })
       }
 
@@ -404,7 +487,12 @@ export function parseTimetable(workbook) {
         prog,
         year,
         bucket,
-        instructor: cell(row, COL.shortInstructor) || 'TBA',
+        // Two names are kept because they serve different places: the blocks
+        // are narrow and want the abbreviation, while the tooltip has room for
+        // who the teacher actually is. Neither column is complete, so each
+        // falls back to the other.
+        instructor: cell(row, COL.shortInstructor) || cell(row, COL.instructor) || 'TBA',
+        instructorFull: cell(row, COL.instructor) || cell(row, COL.shortInstructor) || 'TBA',
         bg: color?.bg || FALLBACK_COLOR.bg,
         text: color?.text || FALLBACK_COLOR.text,
         unslotted: meetings.length === 0,
@@ -432,6 +520,10 @@ export function parseTimetable(workbook) {
       offerings: offerings.length,
       meetings: offerings.reduce((n, o) => n + o.meetings.length, 0),
       unslotted: offerings.filter((o) => o.unslotted).length,
+      // Classes that run past their starting slot, and so are drawn across
+      // more than one column. Worth surfacing: it is the difference between a
+      // three-hour lab looking like a 90-minute one and looking correct.
+      multiSlot: offerings.reduce((n, o) => n + o.meetings.filter((m) => m.span > 1).length, 0),
       buckets: tally('bucket'),
       programs: tally('prog'),
       years: tally('year'),

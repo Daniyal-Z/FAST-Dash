@@ -1,14 +1,16 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- A timetable grid. The tile is filled and the lines are cut out of it,
+       rather than accent lines on a dark tile: at 16px a dark tile vanishes
+       against a dark tab strip and the icon reads as a floating hash instead
+       of an app. The gradient matches the brand mark in the nav bar. -->
   <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+    <linearGradient id="fd" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#7c9cff"/>
       <stop offset="1" stop-color="#b6c6ff"/>
     </linearGradient>
   </defs>
-  <rect width="64" height="64" rx="16" fill="url(#g)"/>
-  <g fill="#0f1220">
-    <rect x="14" y="16" width="36" height="5" rx="2.5"/>
-    <rect x="14" y="29" width="22" height="5" rx="2.5"/>
-    <rect x="14" y="42" width="29" height="5" rx="2.5"/>
+  <rect width="64" height="64" rx="15" fill="url(#fd)"/>
+  <g stroke="#0f1220" stroke-width="5" stroke-linecap="square">
+    <path d="M23.5 4v56M42.5 4v56M4 23.5h56M4 42.5h56"/>
   </g>
 </svg>

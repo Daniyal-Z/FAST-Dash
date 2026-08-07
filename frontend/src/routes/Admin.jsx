@@ -5,6 +5,7 @@ import { archiveSource, inviteAdmin, listAdmins, listUploads, logUpload, revokeA
 import { NotConfiguredScreen, Screen } from '../components/States.jsx'
 import ConfirmDialog from '../components/ConfirmDialog.jsx'
 import { relativeTime } from '../lib/format.js'
+import { ALL_SCHOOLS, SCHOOLS, schoolShort, sortSchools } from '../lib/schools.js'
 
 export default function Admin() {
   const auth = useAuth()
@@ -100,7 +101,15 @@ function AdminHome({ auth }) {
   const reload = useCallback(() => {
     setReloadKey((n) => n + 1)
     fetchAllMeta()
-      .then((rows) => setLive(Object.fromEntries(rows.map((r) => [r.kind, r]))))
+      .then((rows) => {
+        // Grouped by kind: a timetable exists per school, so each card shows a
+        // list rather than a single row.
+        const byKind = { timetable: [], datesheet: [] }
+        for (const r of rows) (byKind[r.kind] ??= []).push(r)
+        byKind.timetable = sortSchools(byKind.timetable.map((r) => r.school))
+          .map((code) => byKind.timetable.find((r) => r.school === code))
+        setLive(byKind)
+      })
       .catch(() => {})
   }, [])
   useEffect(reload, [reload])
@@ -136,7 +145,8 @@ function AdminHome({ auth }) {
               hint="The FSC timetable workbook — the one with the CS / SE / DS / AI / CY / CI sheets."
               userId={auth.user?.id}
               userEmail={auth.user?.email}
-              live={live.timetable}
+              live={live.timetable ?? []}
+              perSchool
               onChanged={reload}
             />
             <UploadCard
@@ -145,7 +155,7 @@ function AdminHome({ auth }) {
               hint="The exam workbook with the “Complete” sheet."
               userId={auth.user?.id}
               userEmail={auth.user?.email}
-              live={live.datesheet}
+              live={live.datesheet ?? []}
               onChanged={reload}
             />
           </div>
@@ -164,7 +174,9 @@ const PARSERS = {
   datesheet: async () => (await import('../lib/parsers/datesheet.js')).parseDatesheet,
 }
 
-function UploadCard({ kind, title, hint, userId, userEmail, live, onChanged }) {
+function UploadCard({ kind, title, hint, userId, userEmail, live, perSchool, onChanged }) {
+  const [school, setSchool] = useState(perSchool ? SCHOOLS[0].code : ALL_SCHOOLS)
+  const [pendingRemove, setPendingRemove] = useState(null)
   const inputRef = useRef(null)
   const [file, setFile] = useState(null)
   const [result, setResult] = useState(null)
@@ -173,7 +185,6 @@ function UploadCard({ kind, title, hint, userId, userEmail, live, onChanged }) {
   const [error, setError] = useState(null)
   const [dragging, setDragging] = useState(false)
   const [removing, setRemoving] = useState(false)
-  const [confirming, setConfirming] = useState(false)
 
   const reset = () => {
     setFile(null); setResult(null); setLabel(''); setPhase('idle'); setError(null)
@@ -203,6 +214,7 @@ function UploadCard({ kind, title, hint, userId, userEmail, live, onChanged }) {
     try {
       await publishDataset({
         kind,
+        school,
         label: label.trim() || result.label,
         payload: result.data,
         sourceFilename: file?.name,
@@ -212,7 +224,7 @@ function UploadCard({ kind, title, hint, userId, userEmail, live, onChanged }) {
       try { await archiveSource(kind, file) } catch (e) { console.warn('Could not archive source file:', e) }
       try {
         await logUpload({
-          kind, label: label.trim() || result.label, filename: file?.name,
+          kind, school, label: label.trim() || result.label, filename: file?.name,
           stats: { ...result.stats, warnings: result.warnings.length }, userId, userEmail,
         })
       } catch (e) { console.warn('Could not write the activity log:', e) }
@@ -230,18 +242,22 @@ function UploadCard({ kind, title, hint, userId, userEmail, live, onChanged }) {
   }
 
   const remove = async () => {
+    const row = pendingRemove
+    if (!row) return
     setRemoving(true); setError(null)
     try {
-      await unpublishDataset(kind)
+      await unpublishDataset(kind, row.school)
       try {
-        await logUpload({ kind, action: 'unpublish', label: live.label, userId, userEmail })
+        await logUpload({
+          kind, school: row.school, action: 'unpublish', label: row.label, userId, userEmail,
+        })
       } catch (e) { console.warn('Could not write the activity log:', e) }
       reset()
-      setConfirming(false)
+      setPendingRemove(null)
       onChanged?.()
     } catch (err) {
       setError(err.message || String(err))
-      setConfirming(false)
+      setPendingRemove(null)
     }
     setRemoving(false)
   }
@@ -261,22 +277,55 @@ function UploadCard({ kind, title, hint, userId, userEmail, live, onChanged }) {
       </div>
       <p className="mt-1.5 mb-4 text-[12.5px] leading-relaxed" style={{ color: 'var(--tx-2)' }}>{hint}</p>
 
-      {live ? (
-        <div className="fd-live mb-4">
-          <span className="fd-live-dot" />
-          <span className="fd-live-main">
-            <span className="fd-live-label">{live.label}</span>
-            <span className="fd-live-meta">live · updated {relativeTime(live.updated_at)}</span>
-          </span>
-          <button className="fd-live-remove" onClick={() => setConfirming(true)} disabled={removing}>
-            {removing ? 'Removing…' : 'Remove'}
-          </button>
+      {live.length > 0 ? (
+        <div className="mb-4 flex flex-col gap-2">
+          {live.map((row) => (
+            <div key={row.school} className="fd-live">
+              <span className="fd-live-dot" />
+              <span className="fd-live-main">
+                <span className="fd-live-label">
+                  {perSchool && <span className="fd-live-school">{row.school}</span>}
+                  {row.label}
+                </span>
+                <span className="fd-live-meta">
+                  {perSchool ? `${schoolShort(row.school)} · ` : ''}live · updated{' '}
+                  {relativeTime(row.updated_at)}
+                </span>
+              </span>
+              <button
+                className="fd-live-remove"
+                onClick={() => setPendingRemove(row)}
+                disabled={removing}
+              >
+                Remove
+              </button>
+            </div>
+          ))}
         </div>
       ) : (
         <div className="fd-live fd-live-empty mb-4">
           <span className="fd-live-main">
             <span className="fd-live-meta">Nothing published — this page is empty for students.</span>
           </span>
+        </div>
+      )}
+
+      {perSchool && (
+        <div className="mb-4">
+          <label className="fd-label" htmlFor={`school-${kind}`}>Publishing for</label>
+          <select
+            id={`school-${kind}`}
+            className="fd-input"
+            value={school}
+            onChange={(e) => setSchool(e.target.value)}
+          >
+            {SCHOOLS.map((s) => (
+              <option key={s.code} value={s.code}>
+                {s.code} — {s.name}
+                {live.some((r) => r.school === s.code) ? '  (replaces current)' : ''}
+              </option>
+            ))}
+          </select>
         </div>
       )}
 
@@ -324,18 +373,18 @@ function UploadCard({ kind, title, hint, userId, userEmail, live, onChanged }) {
       )}
 
       <ConfirmDialog
-        open={confirming}
+        open={Boolean(pendingRemove)}
         destructive
         busy={removing}
         title={`Take this ${kind} down?`}
         confirmLabel="Remove it"
         cancelLabel="Keep it"
-        onCancel={() => setConfirming(false)}
+        onCancel={() => setPendingRemove(null)}
         onConfirm={remove}
       >
-        <strong>{live?.label}</strong> will stop being shown. The {kind} page goes back to
-        “nothing published”, and anyone who already had it loaded will see it disappear on their
-        next visit.
+        <strong>{pendingRemove?.label}</strong>
+        {perSchool && pendingRemove ? ` (${schoolShort(pendingRemove.school)})` : ''} will stop
+        being shown. Anyone who already had it loaded will see it disappear on their next visit.
         <br />
         <br />
         You can publish again at any time, and the uploaded file stays in the archive.

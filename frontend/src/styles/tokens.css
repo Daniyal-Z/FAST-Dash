@@ -317,6 +317,125 @@ body {
 }
 .fd-pillstat b { color: var(--acc-2); font-weight: 600; }
 
+/* ---------------------------------------------------------------- tooltip */
+
+.fd-tip {
+  position: fixed;
+  z-index: 60;
+  max-width: 310px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(28, 32, 51, 0.97);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--line);
+  box-shadow: 0 18px 44px -16px rgba(0, 0, 0, 0.75);
+  pointer-events: none; /* never steals the hover from its own trigger */
+  opacity: 0;
+  transform: translateY(-2px);
+  transition: opacity 0.13s ease, transform 0.13s ease;
+}
+.fd-tip-in { opacity: 1; transform: none; }
+
+.fd-tip-arrow {
+  position: absolute;
+  left: var(--arrow, 50%);
+  width: 9px;
+  height: 9px;
+  margin-left: -5px;
+  background: rgba(28, 32, 51, 0.97);
+  border: 1px solid var(--line);
+  transform: rotate(45deg);
+}
+/* Only two of the arrow's borders should show, so it reads as a point on the
+   panel edge rather than a floating diamond. */
+.fd-tip .fd-tip-arrow { top: -5px; border-right: none; border-bottom: none; }
+.fd-tip-above .fd-tip-arrow { top: auto; bottom: -5px; border: 1px solid var(--line); border-left: none; border-top: none; }
+
+.fd-tip-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: 9px;
+  margin-bottom: 9px;
+  border-bottom: 1px solid var(--line-2);
+}
+.fd-tip-code {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--acc);
+}
+.fd-tip-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 14px;
+  line-height: 1.3;
+  color: var(--tx);
+}
+
+.fd-tip-row {
+  display: grid;
+  grid-template-columns: 62px 1fr;
+  gap: 10px;
+  align-items: baseline;
+  margin-top: 5px;
+}
+.fd-tip-row:first-of-type { margin-top: 0; }
+.fd-tip-label {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--tx-3);
+}
+.fd-tip-value {
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--tx);
+}
+.fd-tip-value b { font-family: var(--font-mono); font-size: 11.5px; font-weight: 600; }
+
+.fd-tip-note {
+  margin-top: 10px;
+  padding: 7px 9px;
+  border-radius: 8px;
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+.fd-tip-note-warn { background: rgba(255, 107, 129, 0.12); color: #ffc3cc; }
+.fd-tip-note-info { background: rgba(124, 156, 255, 0.12); color: var(--acc-2); }
+
+/* ---------------------------------------------------------- school picker */
+
+.fd-school {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+  text-align: left;
+  padding: 17px 18px;
+  border-radius: 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--tx);
+  cursor: pointer;
+  transition: transform 0.15s, border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+.fd-school:hover {
+  transform: translateY(-2px);
+  border-color: var(--acc);
+  background: var(--panel-2);
+  box-shadow: 0 14px 34px -22px var(--acc);
+}
+.fd-school-code {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 17px;
+  letter-spacing: -0.01em;
+}
+.fd-school-name { font-size: 12.5px; color: var(--tx-2); line-height: 1.4; }
+
 /* ------------------------------------------------------- confirm dialog -- */
 /* Sits on the shared `.modal` backdrop already defined in timetable.css. */
 
@@ -426,6 +545,16 @@ body {
   white-space: nowrap;
 }
 .fd-live-meta { font-family: var(--font-mono); font-size: 11px; color: var(--tx-3); }
+.fd-live-school {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--ok);
+  background: rgba(93, 219, 160, 0.14);
+  border-radius: 5px;
+  padding: 1px 6px;
+  margin-right: 7px;
+}
 .fd-live-remove {
   background: transparent;
   border: 1px solid var(--line);

@@ -1,5 +1,12 @@
 import React, { useState, useMemo, useEffect, useCallback } from "react";
-import { useDataset } from "../hooks/useDataset.js";
+import { useAllMeta, useDataset } from "../hooks/useDataset.js";
+import { useSchoolChoice } from "../hooks/useSchoolChoice.js";
+import SchoolPicker from "../components/SchoolPicker.jsx"
+import PanelToggle from "../components/PanelToggle.jsx"
+import { usePanel } from "../hooks/usePanel.js";
+import { TipHead, TipRow, TipNote } from "../components/Tooltip.jsx";
+import { useTooltip } from "../hooks/useTooltip.jsx";
+import { schoolShort } from "../lib/schools.js";
 import {
   EmptyDatasetScreen,
   ErrorScreen,
@@ -27,20 +34,56 @@ const YEAR_LABEL = { 1: "Year 1", 2: "Year 2", 3: "Year 3", 4: "Year 4", 5: "Yea
 const SEM_OF = { 1: "1st sem", 2: "2nd", 3: "3rd sem", 4: "4th", 5: "5th sem", 6: "6th", 7: "7th sem", 8: "8th", 9: "9th sem" };
 
 const STORAGE_KEY = "fastdash:timetable:selected";
+const SCHOOL_KEY = "fastdash:timetable:school";
 
-/** Route entry point: loads the published timetable, then renders the builder. */
-export default function Timetable() {
-  const { data, label, status, error, refresh } = useDataset("timetable");
+/** Height of one lane: the block itself plus the gap beneath it. */
+const LANE_H = 84;
 
-  if (status === "unconfigured") return <NotConfiguredScreen />;
-  if (status === "loading") return <LoadingScreen what="timetable" />;
-  if (status === "empty") return <EmptyDatasetScreen what="timetable" />;
-  if (status === "error") return <ErrorScreen error={error} onRetry={refresh} />;
+/* Minimum width per period band. Sized so that the longest line a block
+   carries — "Instructor · 10:00-11:20" — still fits in the common case of an
+   80-minute class, which occupies only ~89% of its band. Blocks ellipsize
+   rather than wrap, and this grid gets screenshotted, so a truncated end time
+   would follow people into their saved images. */
+const MIN_BAND_W = 178;
 
-  return <TimetableBuilder data={data} label={label} />;
+function hhmmToMin(hhmm) {
+  const [h, m] = String(hhmm).split(":").map(Number);
+  return (h || 0) * 60 + (m || 0);
 }
 
-function TimetableBuilder({ data, label }) {
+/**
+ * Route entry point: choose a school, load that school's timetable, then hand
+ * off to the builder. The school is picked before anything is downloaded, so a
+ * visitor only ever fetches the one dataset they need.
+ */
+export default function Timetable() {
+  const meta = useAllMeta();
+  const { school, setSchool, published } = useSchoolChoice(SCHOOL_KEY, meta, "timetable");
+  const ds = useDataset("timetable", school);
+
+  if (meta.status === "unconfigured") return <NotConfiguredScreen />;
+  if (meta.status === "loading") return <LoadingScreen what="timetable" />;
+  if (meta.status === "error") return <ErrorScreen error={meta.error} />;
+  if (published.length === 0) return <EmptyDatasetScreen what="timetable" />;
+  if (!school) return <SchoolPicker published={published} onPick={setSchool} what="timetable" />;
+
+  if (ds.status === "idle" || ds.status === "loading") return <LoadingScreen what="timetable" />;
+  if (ds.status === "empty") return <EmptyDatasetScreen what="timetable" />;
+  if (ds.status === "error") return <ErrorScreen error={ds.error} onRetry={ds.refresh} />;
+
+  return (
+    <TimetableBuilder
+      key={school}
+      data={ds.data}
+      label={ds.label}
+      school={school}
+      onChangeSchool={() => setSchool(null)}
+      canChangeSchool={published.length > 1}
+    />
+  );
+}
+
+function TimetableBuilder({ data, label, school, onChangeSchool, canChangeSchool }) {
   const { days, periods, offerings } = data;
 
   const [selectedIds, setSelectedIds] = useState(() => new Set());
@@ -51,6 +94,8 @@ function TimetableBuilder({ data, label }) {
   const [tab, setTab] = useState("main"); // main | additional | electives
   const [ready, setReady] = useState(false);
   const [pngPreview, setPngPreview] = useState(null);
+  const { bind, tooltip } = useTooltip()
+  const panel = usePanel();
 
   // Everything the export writes is driven by the published label, so the
   // image never claims to be a semester it isn't.
@@ -58,18 +103,21 @@ function TimetableBuilder({ data, label }) {
   const exportFilename =
     "Timetable_" + (label || "timetable").replace(/[^\w]+/g, "_").replace(/^_|_$/g, "") + ".png";
 
-  /* ---------- persistence ---------- */
+  /* ---------- persistence ----------
+     Keyed by school: offering ids are only unique within one school's
+     workbook, so a single shared key would mix two schools' selections. */
+  const storageKey = `${STORAGE_KEY}:${school}`;
   useEffect(() => {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) setSelectedIds(new Set(JSON.parse(raw)));
+      const raw = localStorage.getItem(storageKey);
+      setSelectedIds(raw ? new Set(JSON.parse(raw)) : new Set());
     } catch (e) { /* first run, or storage unavailable */ }
     setReady(true);
-  }, []);
+  }, [storageKey]);
   useEffect(() => {
     if (!ready) return;
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify([...selectedIds])); } catch (e) {}
-  }, [selectedIds, ready]);
+    try { localStorage.setItem(storageKey, JSON.stringify([...selectedIds])); } catch (e) {}
+  }, [selectedIds, ready, storageKey]);
 
   // Drop selections that are no longer in the published data, so a stale
   // localStorage entry from last semester cannot pin invisible courses.
@@ -137,16 +185,82 @@ function TimetableBuilder({ data, label }) {
   /* ---------- grid ---------- */
   const selected = useMemo(() => offerings.filter(o => selectedIds.has(o.id)), [offerings, selectedIds]);
   const alsoEnrolled = useMemo(() => selected.filter(o => !o.meetings.length), [selected]);
-  const grid = useMemo(() => {
-    const g = {}; days.forEach(d => { g[d] = {}; periods.forEach(p => (g[d][p.p] = [])); });
-    selected.forEach(o => o.meetings.forEach(m => { if (g[m.day] && g[m.day][m.period]) g[m.day][m.period].push({ o, room: m.room }); }));
-    return g;
-  }, [selected, days, periods]);
+  /* ---------- week layout ----------
+     Laid out on a real time axis rather than in per-period cells.
 
-  const conflicts = useMemo(() => {
-    let c = 0; days.forEach(d => periods.forEach(p => { const cell = grid[d][p.p]; const ids = new Set(cell.map(x => x.o.id)); if (ids.size > 1) c++; }));
-    return c;
-  }, [grid, days, periods]);
+     Cells cannot express a class that outlasts its slot: each one carries its
+     own padding and border, so a block drawn across two of them is chopped in
+     half by the gutter between them and has to be reassembled visually, which
+     never quite works. Positioning by time instead means one class is one
+     block, its left edge from when it starts and its width from how long it
+     runs — so a 170-minute lab is simply a wider bar.
+
+     Classes that genuinely overlap are stacked into lanes, which is also what
+     makes a clash legible: two bars sitting on top of each other. */
+  const axis = useMemo(() => {
+    const from = hhmmToMin(periods[0].t.split("-")[0]);
+    const to = hhmmToMin(periods[periods.length - 1].t.split("-")[1]);
+    return { from, to, span: Math.max(1, to - from) };
+  }, [periods]);
+
+  const pct = useCallback(mins => ((mins - axis.from) / axis.span) * 100, [axis]);
+
+  const bandBounds = useMemo(() => {
+    const m = {};
+    periods.forEach(p => {
+      const [a, b] = p.t.split("-");
+      m[p.p] = [hhmmToMin(a), hhmmToMin(b)];
+    });
+    return m;
+  }, [periods]);
+
+  const week = useMemo(() => {
+    const byDay = {};
+    let clashes = 0;
+
+    days.forEach(day => {
+      const items = [];
+      selected.forEach(o => o.meetings.forEach(m => {
+        if (m.day !== day) return;
+        // Data published before durations were parsed has no start/end, so
+        // fall back to the bounds of the bands it was recorded against.
+        const span = Math.max(1, m.span || 1);
+        const firstBand = bandBounds[m.period] ?? [axis.from, axis.from + 90];
+        const lastBand = bandBounds[m.period + span - 1] ?? firstBand;
+        const start = m.start ? hhmmToMin(m.start) : firstBand[0];
+        const end = m.end ? hhmmToMin(m.end) : lastBand[1];
+        items.push({ o, meeting: m, room: m.room, start, end: Math.max(end, start + 20) });
+      }));
+
+      items.sort((a, b) => a.start - b.start || a.end - b.end);
+
+      // Lane packing: reuse the first lane whose previous class has finished.
+      const laneEnds = [];
+      items.forEach(it => {
+        let lane = laneEnds.findIndex(end => end <= it.start);
+        if (lane === -1) { lane = laneEnds.length; laneEnds.push(0); }
+        laneEnds[lane] = it.end;
+        it.lane = lane;
+      });
+
+      const pairs = new Set();
+      items.forEach(a => items.forEach(b => {
+        if (a === b || a.o.id === b.o.id) return;
+        if (a.start < b.end && b.start < a.end) {
+          pairs.add([a.o.id, b.o.id].sort().join("|"));
+          a.clash = true;
+        }
+      }));
+      clashes += pairs.size;
+
+      byDay[day] = { items, lanes: Math.max(1, laneEnds.length) };
+    });
+
+    return { byDay, clashes };
+  }, [selected, days, bandBounds, axis]);
+
+  const conflicts = week.clashes;
+
 
   /* ---------- actions ---------- */
   const toggle = useCallback(id => setSelectedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; }), []);
@@ -159,16 +273,18 @@ function TimetableBuilder({ data, label }) {
 
   /* ---------- download as PNG (canvas) ---------- */
   const downloadPNG = useCallback(() => {
+    // Mirrors the on-screen layout: a time axis, not a column per period, so a
+    // long class is drawn as one wide bar rather than several tiles.
     const scale = 2;
-    const dayColW = 96, timeColW = 190, headerH = 54, pad = 22, titleH = 64;
-    const rowHeights = days.map(d => {
-      const maxItems = Math.max(1, ...periods.map(p => grid[d][p.p].length));
-      return Math.max(64, 20 + maxItems * 58);
-    });
-    const gridW = dayColW + periods.length * timeColW;
+    const dayColW = 96, trackW = periods.length * 190, headerH = 54, pad = 22, titleH = 64;
+    const laneH = 62, blockH = 54;
+
+    const rowHeights = days.map(d => Math.max(66, week.byDay[d].lanes * laneH + 10));
+    const gridW = dayColW + trackW;
     const gridH = headerH + rowHeights.reduce((a, b) => a + b, 0);
     const footH = alsoEnrolled.length ? 24 + Math.ceil(alsoEnrolled.length / 3) * 20 : 0;
     const W = gridW + pad * 2, H = titleH + gridH + footH + pad * 2;
+
     const cv = document.createElement("canvas"); cv.width = W * scale; cv.height = H * scale;
     const ctx = cv.getContext("2d"); ctx.scale(scale, scale);
     ctx.fillStyle = "#0f1220"; ctx.fillRect(0, 0, W, H);
@@ -176,49 +292,75 @@ function TimetableBuilder({ data, label }) {
     ctx.fillText("The Lineup", pad, pad + 20);
     ctx.fillStyle = "#7c9cff"; ctx.font = "600 13px 'JetBrains Mono', monospace";
     ctx.fillText(exportSubtitle, pad, pad + 44);
+
     const gx = pad, gy = pad + titleH;
-    // header row
+    const xOf = mins => gx + dayColW + ((mins - axis.from) / axis.span) * trackW;
+
+    // header
     ctx.fillStyle = "#171a2b"; ctx.fillRect(gx, gy, gridW, headerH);
-    ctx.strokeStyle = "rgba(255,255,255,0.08)"; ctx.lineWidth = 1;
     ctx.font = "600 12px 'JetBrains Mono', monospace"; ctx.textAlign = "center";
-    periods.forEach((p, i) => { const x = gx + dayColW + i * timeColW; ctx.fillStyle = "#9aa0b5"; ctx.fillText(p.t, x + timeColW / 2, gy + headerH / 2); });
+    periods.forEach(p => {
+      const [from, to] = p.t.split("-");
+      ctx.fillStyle = "#9aa0b5";
+      ctx.fillText(p.t, (xOf(hhmmToMin(from)) + xOf(hhmmToMin(to))) / 2, gy + headerH / 2);
+    });
     ctx.textAlign = "left";
+
     let yy = gy + headerH;
     days.forEach((d, di) => {
       const rh = rowHeights[di];
       ctx.fillStyle = "#141726"; ctx.fillRect(gx, yy, dayColW, rh);
       ctx.fillStyle = "#e8eaf2"; ctx.font = "700 16px 'Space Grotesk', sans-serif";
       ctx.fillText(d, gx + 16, yy + rh / 2);
-      periods.forEach((p, pi) => {
-        const cx = gx + dayColW + pi * timeColW; const cell = grid[d][p.p];
-        ctx.strokeStyle = "rgba(255,255,255,0.06)"; ctx.strokeRect(cx, yy, timeColW, rh);
-        cell.forEach((it, k) => {
-          const bx = cx + 6, by = yy + 8 + k * 58, bw = timeColW - 12, bh = 50;
-          roundRect(ctx, bx, by, bw, bh, 8); ctx.fillStyle = it.o.bg; ctx.fill();
-          ctx.fillStyle = it.o.text; roundRect(ctx, bx, by, 4, bh, 2); ctx.fill();
-          ctx.fillStyle = it.o.text; ctx.font = "700 13px 'Space Grotesk', sans-serif";
-          ctx.fillText(trunc(ctx, it.o.course, bw - 20), bx + 12, by + 15);
-          ctx.font = "500 10px 'JetBrains Mono', monospace"; ctx.fillStyle = it.o.text;
-          ctx.globalAlpha = 0.85;
-          ctx.fillText(trunc(ctx, it.o.section + " · " + it.room, bw - 20), bx + 12, by + 30);
-          ctx.fillText(trunc(ctx, it.o.instructor, bw - 20), bx + 12, by + 42);
-          ctx.globalAlpha = 1;
-        });
+
+      // band dividers, from the same axis as the blocks
+      ctx.strokeStyle = "rgba(255,255,255,0.06)";
+      periods.slice(1).forEach(p => {
+        const x = xOf(bandBounds[p.p][0]);
+        ctx.beginPath(); ctx.moveTo(x, yy); ctx.lineTo(x, yy + rh); ctx.stroke();
       });
+
+      week.byDay[d].items.forEach(it => {
+        const bx = xOf(it.start) + 3;
+        const bw = Math.max(34, xOf(it.end) - xOf(it.start) - 6);
+        const by = yy + 6 + it.lane * laneH;
+        roundRect(ctx, bx, by, bw, blockH, 8); ctx.fillStyle = it.o.bg; ctx.fill();
+        if (it.clash) { ctx.strokeStyle = "#ff6b81"; ctx.lineWidth = 1.5; ctx.stroke(); ctx.lineWidth = 1; }
+        ctx.fillStyle = it.o.text; roundRect(ctx, bx, by, 4, blockH, 2); ctx.fill();
+
+        const inner = bw - 20;
+        ctx.fillStyle = it.o.text;
+        ctx.font = "700 13px 'Space Grotesk', sans-serif";
+        ctx.fillText(trunc(ctx, it.o.course, inner), bx + 12, by + 15);
+        ctx.font = "500 10px 'JetBrains Mono', monospace";
+        ctx.globalAlpha = 0.85;
+        ctx.fillText(trunc(ctx, it.o.section + " \u00b7 " + it.room, inner), bx + 12, by + 30);
+        const when = it.meeting.end ? `${it.meeting.start}\u2013${it.meeting.end}` : it.meeting.time;
+        // Time drawn at a fixed right offset and the name truncated to
+        // what is left, so an over-long instructor note can never eat it.
+        const timeW = ctx.measureText(when).width;
+        ctx.fillText(when, bx + bw - 12 - timeW, by + 44);
+        ctx.fillText(trunc(ctx, it.o.instructor, Math.max(10, inner - timeW - 12)), bx + 12, by + 44);
+        ctx.globalAlpha = 1;
+      });
+
       yy += rh;
     });
+
     ctx.strokeStyle = "rgba(255,255,255,0.12)"; ctx.strokeRect(gx, gy, gridW, gridH);
+
     if (alsoEnrolled.length) {
       let fy = gy + gridH + 20;
       ctx.textAlign = "left"; ctx.fillStyle = "#9aa0b5"; ctx.font = "600 11px 'JetBrains Mono', monospace";
-      ctx.fillText("ALSO ENROLLED · NO FIXED SLOT", gx, fy); fy += 18;
+      ctx.fillText("ALSO ENROLLED \u00b7 NO FIXED SLOT", gx, fy); fy += 18;
       ctx.font = "500 12px 'Space Grotesk', sans-serif"; ctx.fillStyle = "#e8eaf2";
       alsoEnrolled.forEach((o, i) => {
         const col = i % 3, rowi = Math.floor(i / 3);
-        const label = (o.code ? o.code + " " : "") + o.course + " (" + (o.section !== "—" ? o.section : o.prog) + ")";
-        ctx.fillText(trunc(ctx, label, timeColW * 2.4), gx + col * (gridW / 3), fy + rowi * 20);
+        const label = (o.code ? o.code + " " : "") + o.course + " (" + (o.section !== "\u2014" ? o.section : o.prog) + ")";
+        ctx.fillText(trunc(ctx, label, gridW / 3 - 20), gx + col * (gridW / 3), fy + rowi * 20);
       });
     }
+
     let url;
     try { url = cv.toDataURL("image/png"); } catch (e) { url = null; }
     if (url) {
@@ -227,9 +369,9 @@ function TimetableBuilder({ data, label }) {
         const a = document.createElement("a");
         a.href = url; a.download = exportFilename;
         document.body.appendChild(a); a.click(); a.remove();
-      } catch (e) { /* sandbox may block auto-download — preview covers it */ }
+      } catch (e) { /* preview modal covers it */ }
     }
-  }, [grid, days, periods, alsoEnrolled, exportSubtitle, exportFilename]);
+  }, [week, days, periods, axis, bandBounds, alsoEnrolled, exportSubtitle, exportFilename]);
 
   function roundRect(ctx, x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
   function trunc(ctx, s, max) { if (ctx.measureText(s).width <= max) return s; let t = s; while (t.length && ctx.measureText(t + "…").width > max) t = t.slice(0, -1); return t + "…"; }
@@ -239,15 +381,16 @@ function TimetableBuilder({ data, label }) {
 
   /* ============================================================ */
   return (
-    <div className="fsc-root">
+    <div className={"fsc-root" + (panel.open ? "" : " panel-collapsed")}>
       {/* ============ LEFT CONTROL PANEL ============ */}
       <aside className="panel">
         <header className="brand">
-          <div className="brand-mark">FSC</div>
+          <div className="brand-mark">{school}</div>
           <div>
             <div className="brand-title">Timetable Builder</div>
             <div className="brand-sub">{label || "Timetable"}</div>
           </div>
+          <PanelToggle open={panel.open} onToggle={panel.toggle} />
         </header>
 
         {/* search */}
@@ -271,7 +414,13 @@ function TimetableBuilder({ data, label }) {
             <div className="funnel">
               {/* breadcrumb of committed selections */}
               <div className="crumbs">
-                {prog && <button className="crumb" onClick={() => pickProg(null)}><b>{prog}</b><i>{PROG_META[prog]}</i><span className="crumb-x">↻</span></button>}
+                {canChangeSchool && (
+                  <button className="crumb" onClick={onChangeSchool} title="Change school">
+                    <b>{school}</b><i>{schoolShort(school)}</i><span className="crumb-x">↻</span>
+                  </button>
+                )}
+                {canChangeSchool && (prog || year || section) && <span className="crumb-sep">▸</span>}
+                {prog && <button className="crumb" onClick={() => pickProg(null)}><b>{prog}</b><i>{PROG_META[prog] || prog}</i><span className="crumb-x">↻</span></button>}
                 {year && <><span className="crumb-sep">▸</span><button className="crumb" onClick={() => pickYear(null)}><b>{YEAR_LABEL[year]}</b><span className="crumb-x">↻</span></button></>}
                 {section && <><span className="crumb-sep">▸</span><button className="crumb crumb-sec" onClick={() => setSection(null)}><b>{section}</b><span className="crumb-x">↻</span></button></>}
               </div>
@@ -367,6 +516,9 @@ function TimetableBuilder({ data, label }) {
       {/* ============ RIGHT: TIMETABLE ============ */}
       <main className="stage">
         <div className="stage-bar">
+          {/* Once the panel is closed its own toggle goes with it, so the way
+              back has to live out here. */}
+          {!panel.open && <PanelToggle open={false} onToggle={panel.toggle} />}
           <div className="stage-title">
             <h1>The Lineup</h1>
             <div className="stage-meta">
@@ -400,36 +552,80 @@ function TimetableBuilder({ data, label }) {
 
         <div className="grid-wrap">
           <div className="grid-scroll">
-            <div className="grid" style={{ gridTemplateColumns: `92px repeat(${periods.length}, minmax(150px, 1fr))` }}>
-            <div className="gh gh-corner"><span>DAY</span><span className="corner-slash">/</span><span>TIME</span></div>
-            {periods.map(p => <div key={p.p} className="gh gh-time">{p.t}</div>)}
+            <div className="tt" style={{ minWidth: `${92 + periods.length * MIN_BAND_W}px` }}>
+              <div className="tt-corner"><span>DAY</span><span className="corner-slash">/</span><span>TIME</span></div>
 
-            {days.map(d => (
-              <React.Fragment key={d}>
-                <div className="gh gh-day">{d}</div>
+              <div className="tt-head">
                 {periods.map(p => {
-                  const cell = grid[d][p.p];
-                  const clash = new Set(cell.map(x => x.o.id)).size > 1;
+                  const [from, to] = p.t.split("-");
+                  const left = pct(hhmmToMin(from));
                   return (
-                    <div key={p.p} className={"cell" + (clash ? " cell-clash" : "")}>
-                      {cell.map((it, i) => (
-                        <div key={it.o.id + i} className="block" style={{ background: it.o.bg, color: it.o.text }} title={`${it.o.code ? it.o.code + " · " : ""}${it.o.title || it.o.course} (${it.o.section}) — ${it.o.instructor} @ ${it.room}`}>
-                          <span className="block-spine" style={{ background: it.o.text }} />
-                          {it.o.code ? <div className="block-eyebrow">{it.o.code}</div> : null}
-                          <div className="block-code">{it.o.course}</div>
-                          <div className="block-meta">
-                            <span className="block-sec">{it.o.section}</span>
-                            <span className="block-room">{it.room}</span>
-                          </div>
-                          <div className="block-inst">{it.o.instructor}</div>
-                          <button className="block-x" onClick={() => toggle(it.o.id)} aria-label="Remove">×</button>
-                        </div>
-                      ))}
-                    </div>
+                    <span
+                      key={p.p}
+                      className="tt-head-cell"
+                      style={{ left: `${left}%`, width: `${pct(hhmmToMin(to)) - left}%` }}
+                    >
+                      {p.t}
+                    </span>
                   );
                 })}
-              </React.Fragment>
-            ))}
+              </div>
+
+              {days.map(d => {
+                const row = week.byDay[d];
+                return (
+                  <React.Fragment key={d}>
+                    <div className="tt-day">{d}</div>
+                    <div className="tt-row" style={{ height: `${row.lanes * LANE_H + 12}px` }}>
+                      {/* Band boundaries, drawn from the same axis as the blocks
+                          so the columns and the classes always line up. */}
+                      {periods.slice(1).map(p => (
+                        <span key={p.p} className="tt-divider" style={{ left: `${pct(bandBounds[p.p][0])}%` }} />
+                      ))}
+
+                      {row.items.map((it, i) => {
+                        const left = pct(it.start);
+                        const when = it.meeting.end
+                          ? `${it.meeting.start}–${it.meeting.end}`
+                          : it.meeting.time;
+                        return (
+                          <div
+                            key={it.o.id + "-" + i}
+                            className={"tt-block" + (it.clash ? " tt-block-clash" : "")}
+                            style={{
+                              left: `calc(${left}% + 3px)`,
+                              width: `calc(${pct(it.end) - left}% - 6px)`,
+                              top: `${6 + it.lane * LANE_H}px`,
+                              background: it.o.bg,
+                              color: it.o.text,
+                            }}
+                            tabIndex={0}
+                            {...bind(<BlockTip it={it} when={when} />)}
+                          >
+                            <span className="block-spine" style={{ background: it.o.text }} />
+                            {it.o.code ? <div className="block-eyebrow">{it.o.code}</div> : null}
+                            <div className="block-code">{it.o.course}</div>
+                            <div className="block-meta">
+                              <span className="block-sec">{it.o.section}</span>
+                              <span className="block-room">{it.room}</span>
+                            </div>
+                            {/* The time is pinned and the name ellipsizes, not the
+                                other way round: the instructor column sometimes
+                                holds a note rather than a name ("merged with
+                                Applied Prob BDS-7A"), which no sensible column
+                                width would ever fit. */}
+                            <div className="block-inst">
+                              <span className="block-inst-name">{it.o.instructor}</span>
+                              <span className="block-inst-time">{when}</span>
+                            </div>
+                            <button className="block-x" onClick={() => toggle(it.o.id)} aria-label="Remove">×</button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </React.Fragment>
+                );
+              })}
             </div>
           </div>
           {selected.length === 0 && (
@@ -440,7 +636,11 @@ function TimetableBuilder({ data, label }) {
             </div>
           )}
         </div>
+
+        <p className="source-note">Course titles, teachers, rooms and timings are shown as published by FAST NUCES. Any errors originate in the official sheet.</p>
       </main>
+
+      {tooltip}
 
       {pngPreview && (
         <div className="modal" onClick={() => setPngPreview(null)}>
@@ -475,5 +675,48 @@ function CourseRow({ o, on, toggle, showSec }) {
       </span>
       <span className={"crow-tick" + (on ? " on" : "")}>{on ? "✓" : "+"}</span>
     </button>
+  );
+}
+
+const BUCKET_LABEL = { main: "Core", repeat: "Repeat", elective: "Elective" };
+
+/**
+ * What a block shows on hover. The block itself only has room for a short name
+ * and a room number, so this is where the full title, the exact times and the
+ * course's other weekly meeting live.
+ */
+function BlockTip({ it, when }) {
+  const o = it.o;
+  const others = o.meetings.filter(m => m !== it.meeting);
+  return (
+    <>
+      <TipHead code={o.code} title={o.title || o.course} />
+      <TipRow label="Section">{o.section}</TipRow>
+      <TipRow label="Teacher">{o.instructorFull || o.instructor}</TipRow>
+      <TipRow label="Room"><b>{it.room}</b></TipRow>
+      <TipRow label="Time">
+        <b>{it.meeting.day} {when}</b>
+        {it.meeting.duration ? ` · ${it.meeting.duration} min` : ""}
+      </TipRow>
+      <TipRow label="Type">
+        {BUCKET_LABEL[o.bucket] || o.bucket} · {o.prog} Year {o.year}
+      </TipRow>
+      {others.length > 0 && (
+        <TipRow label="Also">
+          {others.map((m, i) => (
+            <span key={i}>
+              {i > 0 && ", "}
+              <b>{m.day} {m.end ? `${m.start}\u2013${m.end}` : m.time}</b>
+              {m.room !== it.room ? ` · ${m.room}` : ""}
+            </span>
+          ))}
+        </TipRow>
+      )}
+      {it.clash && (
+        <TipNote tone="warn">
+          Overlaps another course you&rsquo;ve added at this time.
+        </TipNote>
+      )}
+    </>
   );
 }

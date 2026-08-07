@@ -101,16 +101,26 @@ for (const table of ['datasets', 'admins', 'upload_log']) {
 
 // RLS hides rows rather than erroring, so selecting a column we cannot read
 // still tells us whether that column exists — a missing one is a 400.
-const colProbe = await db.from('upload_log').select('action').limit(1)
-if (colProbe.error && /column .* does not exist|action/i.test(colProbe.error.message)) {
-  fail(
-    'upload_log.action is missing — the unpublish support has not been applied',
-    'Re-run supabase/schema.sql; it is idempotent and adds the column plus the ' +
-      'DELETE policy that lets an admin take a sheet down.',
-  )
-} else {
-  pass('upload_log.action exists (unpublish supported)')
+const hasColumn = async (table, column) => {
+  const probe = await db.from(table).select(column).limit(1)
+  return !(probe.error && /does not exist|schema cache|column/i.test(probe.error.message))
 }
+
+;(await hasColumn('upload_log', 'action'))
+  ? pass('upload_log.action exists (unpublish supported)')
+  : fail(
+      'upload_log.action is missing — unpublish support has not been applied',
+      'Re-run supabase/schema.sql; it is idempotent.',
+    )
+
+;(await hasColumn('datasets', 'school'))
+  ? pass('datasets.school exists (per-school timetables supported)')
+  : fail(
+      'datasets.school is missing — the app cannot read or publish anything until this is added',
+      'Re-run supabase/schema.sql. It adds the column, files the existing ' +
+        'timetable under FSC and the datesheet under ALL, and widens the ' +
+        'primary key to (kind, school).',
+    )
 
 /* --------------------------------------------------------- 2. public read */
 
