@@ -3,6 +3,7 @@ import { useAuth } from '../hooks/useAuth.js'
 import { fetchAllMeta, publishDataset, unpublishDataset } from '../lib/datasets.js'
 import { archiveSource, inviteAdmin, listAdmins, listUploads, logUpload, revokeAdmin } from '../lib/admin.js'
 import { NotConfiguredScreen, Screen } from '../components/States.jsx'
+import ConfirmDialog from '../components/ConfirmDialog.jsx'
 import { relativeTime } from '../lib/format.js'
 
 export default function Admin() {
@@ -185,6 +186,7 @@ function UploadCard({ kind, title, hint, userId, userEmail, live, onChanged }) {
   const [error, setError] = useState(null)
   const [dragging, setDragging] = useState(false)
   const [removing, setRemoving] = useState(false)
+  const [confirming, setConfirming] = useState(false)
 
   const reset = () => {
     setFile(null); setResult(null); setLabel(''); setPhase('idle'); setError(null)
@@ -241,12 +243,6 @@ function UploadCard({ kind, title, hint, userId, userEmail, live, onChanged }) {
   }
 
   const remove = async () => {
-    const ok = window.confirm(
-      `Take "${live.label}" down?\n\n` +
-        `The ${kind} page will go back to showing nothing until you publish again. ` +
-        `Students who already loaded it will see it disappear on their next visit.`,
-    )
-    if (!ok) return
     setRemoving(true); setError(null)
     try {
       await unpublishDataset(kind)
@@ -254,9 +250,11 @@ function UploadCard({ kind, title, hint, userId, userEmail, live, onChanged }) {
         await logUpload({ kind, action: 'unpublish', label: live.label, userId, userEmail })
       } catch (e) { console.warn('Could not write the activity log:', e) }
       reset()
+      setConfirming(false)
       onChanged?.()
     } catch (err) {
       setError(err.message || String(err))
+      setConfirming(false)
     }
     setRemoving(false)
   }
@@ -283,7 +281,7 @@ function UploadCard({ kind, title, hint, userId, userEmail, live, onChanged }) {
             <span className="fd-live-label">{live.label}</span>
             <span className="fd-live-meta">live · updated {relativeTime(live.updated_at)}</span>
           </span>
-          <button className="fd-live-remove" onClick={remove} disabled={removing}>
+          <button className="fd-live-remove" onClick={() => setConfirming(true)} disabled={removing}>
             {removing ? 'Removing…' : 'Remove'}
           </button>
         </div>
@@ -337,6 +335,24 @@ function UploadCard({ kind, title, hint, userId, userEmail, live, onChanged }) {
           ) : null}
         </>
       )}
+
+      <ConfirmDialog
+        open={confirming}
+        destructive
+        busy={removing}
+        title={`Take this ${kind} down?`}
+        confirmLabel="Remove it"
+        cancelLabel="Keep it"
+        onCancel={() => setConfirming(false)}
+        onConfirm={remove}
+      >
+        <strong>{live?.label}</strong> will stop being shown. The {kind} page goes back to
+        “nothing published”, and anyone who already had it loaded will see it disappear on their
+        next visit.
+        <br />
+        <br />
+        You can publish again at any time, and the uploaded file stays in the archive.
+      </ConfirmDialog>
     </section>
   )
 }
@@ -412,6 +428,7 @@ function AdminsTab({ currentUserId }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const [notice, setNotice] = useState(null)
+  const [pendingRevoke, setPendingRevoke] = useState(null)
 
   const load = useCallback(() => {
     listAdmins().then(setRows).catch((e) => setError(e.message))
@@ -432,8 +449,8 @@ function AdminsTab({ currentUserId }) {
     setBusy(false)
   }
 
-  const revoke = async (row) => {
-    if (!window.confirm(`Remove admin access for ${row.email}?`)) return
+  const revoke = async () => {
+    const row = pendingRevoke
     setBusy(true); setError(null); setNotice(null)
     try {
       await revokeAdmin(row.user_id)
@@ -442,6 +459,7 @@ function AdminsTab({ currentUserId }) {
     } catch (err) {
       setError(err.message)
     }
+    setPendingRevoke(null)
     setBusy(false)
   }
 
@@ -480,13 +498,31 @@ function AdminsTab({ currentUserId }) {
                 {r.user_id === currentUserId ? (
                   <span className="fd-pillstat">you</span>
                 ) : (
-                  <button className="ds-x" title="Revoke access" onClick={() => revoke(r)} disabled={busy}>×</button>
+                  <button className="ds-x" title="Revoke access" onClick={() => setPendingRevoke(r)} disabled={busy}>×</button>
                 )}
               </li>
             ))}
           </ul>
         )}
       </section>
+
+      <ConfirmDialog
+        open={Boolean(pendingRevoke)}
+        destructive
+        busy={busy}
+        title="Revoke admin access?"
+        confirmLabel="Revoke access"
+        cancelLabel="Cancel"
+        onCancel={() => setPendingRevoke(null)}
+        onConfirm={revoke}
+      >
+        <strong>{pendingRevoke?.email}</strong> will no longer be able to publish or manage
+        administrators.
+        <br />
+        <br />
+        Their sign-in is left intact and their entries stay in the activity log — only the admin
+        permission is removed.
+      </ConfirmDialog>
     </div>
   )
 }

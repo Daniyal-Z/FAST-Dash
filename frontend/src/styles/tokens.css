@@ -317,6 +317,84 @@ body {
 }
 .fd-pillstat b { color: var(--acc-2); font-weight: 600; }
 
+/* ------------------------------------------------------- confirm dialog -- */
+/* Sits on the shared `.modal` backdrop already defined in timetable.css. */
+
+.fd-confirm {
+  width: min(430px, calc(100vw - 32px));
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 30px 80px -20px rgba(0, 0, 0, 0.7);
+  text-align: center;
+}
+
+.fd-confirm-glyph {
+  width: 44px;
+  height: 44px;
+  margin: 0 auto 14px;
+  border-radius: 13px;
+  display: grid;
+  place-items: center;
+  font-size: 20px;
+  background: rgba(124, 156, 255, 0.13);
+  color: var(--acc);
+}
+.fd-confirm-glyph.danger {
+  background: rgba(255, 107, 129, 0.13);
+  color: var(--clash);
+}
+
+.fd-confirm-title {
+  margin: 0 0 8px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 17px;
+  letter-spacing: -0.01em;
+  color: var(--tx);
+}
+
+.fd-confirm-body {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--tx-2);
+}
+.fd-confirm-body strong { color: var(--tx); font-weight: 600; }
+.fd-confirm-body code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--acc-2);
+}
+
+.fd-confirm-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 22px;
+}
+.fd-confirm-actions > * { flex: 1; justify-content: center; }
+
+.fd-danger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: inherit;
+  font-weight: 600;
+  font-size: 13px;
+  border-radius: 10px;
+  padding: 10px 15px;
+  cursor: pointer;
+  transition: 0.15s;
+  background: var(--clash);
+  color: #2a0a11;
+  border: 1px solid var(--clash);
+}
+.fd-danger:hover:not(:disabled) {
+  background: #ff8496;
+  box-shadow: 0 6px 20px -8px var(--clash);
+}
+.fd-danger:disabled { opacity: 0.5; cursor: not-allowed; }
+
 .fd-live {
   display: flex;
   align-items: center;
