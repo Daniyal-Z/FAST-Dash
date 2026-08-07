@@ -98,7 +98,11 @@ reads are open, and every write requires a row in `public.admins`.
 
 Vercel, with **Root Directory** set to `frontend`. Add `VITE_SUPABASE_URL` and
 `VITE_SUPABASE_ANON_KEY` as environment variables. Pushes to `main` deploy
-automatically; `vercel.json` handles the SPA rewrite.
+automatically.
+
+`frontend/vercel.json` handles the SPA rewrite, without which a hard refresh on
+`/timetable` returns 404. It has to live inside the Root Directory — Vercel does
+not read a `vercel.json` from above it.
 
 Then add `SUPABASE_URL` and `SUPABASE_ANON_KEY` as **repository secrets** so
 `.github/workflows/keepalive.yml` can run. Free Supabase projects pause after
