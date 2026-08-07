@@ -27,7 +27,15 @@ jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # v4 runs on Node 20, which the runners now warn about. Every major from
+      # v5 up runs Node 24; v7 is current and its breaking changes concern
+      # pull-request checkout, which does not apply to a scheduled run.
+      - uses: actions/checkout@v7
+        with:
+          # The heartbeat step below pushes a commit, so the token has to
+          # survive the checkout. This is the default today; stating it means a
+          # future change of default cannot break the step silently.
+          persist-credentials: true
 
       - name: Read one row from the datasets table
         env:
