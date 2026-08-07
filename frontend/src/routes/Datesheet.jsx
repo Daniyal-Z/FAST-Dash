@@ -3,6 +3,8 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAllMeta, useDataset } from '../hooks/useDataset.js'
 import { useSchoolChoice } from '../hooks/useSchoolChoice.js'
 import SchoolPicker from '../components/SchoolPicker.jsx'
+import PanelToggle from '../components/PanelToggle.jsx'
+import { usePanel } from '../hooks/usePanel.js'
 import { TipHead, TipRow, TipNote } from '../components/Tooltip.jsx'
 import { useTooltip } from '../hooks/useTooltip.jsx'
 import { ALL_SCHOOLS, schoolShort } from '../lib/schools.js'
@@ -104,6 +106,7 @@ function DatesheetBuilder({ data, label, timetable, school, onChangeSchool, canC
   const [view, setView] = useState('list') // list | grid
   const [pngPreview, setPngPreview] = useState(null)
   const { bind, tooltip } = useTooltip()
+  const panel = usePanel()
 
   const exportFilename =
     'Datesheet_' + (label || 'datesheet').replace(/[^\w]+/g, '_').replace(/^_|_$/g, '') + '.png'
@@ -345,7 +348,7 @@ function DatesheetBuilder({ data, label, timetable, school, onChangeSchool, canC
   const searching = query.trim().length >= 2
 
   return (
-    <div className="fsc-root">
+    <div className={"fsc-root" + (panel.open ? "" : " panel-collapsed")}>
       {/* ============ LEFT CONTROL PANEL ============ */}
       <aside className="panel">
         <header className="brand">
@@ -354,6 +357,7 @@ function DatesheetBuilder({ data, label, timetable, school, onChangeSchool, canC
             <div className="brand-title">Datesheet</div>
             <div className="brand-sub">{label || 'Exams'}</div>
           </div>
+          <PanelToggle open={panel.open} onToggle={panel.toggle} />
         </header>
 
         <div className="search">
@@ -475,6 +479,7 @@ function DatesheetBuilder({ data, label, timetable, school, onChangeSchool, canC
       {/* ============ RIGHT: SCHEDULE ============ */}
       <main className="stage">
         <div className="stage-bar">
+          {!panel.open && <PanelToggle open={false} onToggle={panel.toggle} />}
           <div className="stage-title">
             <h1>Your Exams</h1>
             <div className="stage-meta">

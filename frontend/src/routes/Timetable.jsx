@@ -1,7 +1,9 @@
 import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { useAllMeta, useDataset } from "../hooks/useDataset.js";
 import { useSchoolChoice } from "../hooks/useSchoolChoice.js";
-import SchoolPicker from "../components/SchoolPicker.jsx";
+import SchoolPicker from "../components/SchoolPicker.jsx"
+import PanelToggle from "../components/PanelToggle.jsx"
+import { usePanel } from "../hooks/usePanel.js";
 import { TipHead, TipRow, TipNote } from "../components/Tooltip.jsx";
 import { useTooltip } from "../hooks/useTooltip.jsx";
 import { schoolShort } from "../lib/schools.js";
@@ -85,7 +87,8 @@ function TimetableBuilder({ data, label, school, onChangeSchool, canChangeSchool
   const [tab, setTab] = useState("main"); // main | additional | electives
   const [ready, setReady] = useState(false);
   const [pngPreview, setPngPreview] = useState(null);
-  const { bind, tooltip } = useTooltip();
+  const { bind, tooltip } = useTooltip()
+  const panel = usePanel();
 
   // Everything the export writes is driven by the published label, so the
   // image never claims to be a semester it isn't.
@@ -367,7 +370,7 @@ function TimetableBuilder({ data, label, school, onChangeSchool, canChangeSchool
 
   /* ============================================================ */
   return (
-    <div className="fsc-root">
+    <div className={"fsc-root" + (panel.open ? "" : " panel-collapsed")}>
       {/* ============ LEFT CONTROL PANEL ============ */}
       <aside className="panel">
         <header className="brand">
@@ -376,6 +379,7 @@ function TimetableBuilder({ data, label, school, onChangeSchool, canChangeSchool
             <div className="brand-title">Timetable Builder</div>
             <div className="brand-sub">{label || "Timetable"}</div>
           </div>
+          <PanelToggle open={panel.open} onToggle={panel.toggle} />
         </header>
 
         {/* search */}
@@ -501,6 +505,9 @@ function TimetableBuilder({ data, label, school, onChangeSchool, canChangeSchool
       {/* ============ RIGHT: TIMETABLE ============ */}
       <main className="stage">
         <div className="stage-bar">
+          {/* Once the panel is closed its own toggle goes with it, so the way
+              back has to live out here. */}
+          {!panel.open && <PanelToggle open={false} onToggle={panel.toggle} />}
           <div className="stage-title">
             <h1>The Lineup</h1>
             <div className="stage-meta">

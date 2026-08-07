@@ -3,7 +3,9 @@
 
 .fsc-root{
   display:grid;
-  grid-template-columns:388px 1fr;
+  --panel-w:388px;
+  grid-template-columns:var(--panel-w) 1fr;
+  transition:grid-template-columns .24s cubic-bezier(.4,0,.2,1);
   height:calc(100dvh - var(--nav-h));
   min-height:520px;
   font-family:'Inter',system-ui,sans-serif;
@@ -187,6 +189,7 @@
 
 @media (max-width:920px){
   .fsc-root{grid-template-columns:1fr;grid-template-rows:auto 1fr;height:auto;min-height:calc(100dvh - var(--nav-h))}
+  .fsc-root.panel-collapsed{grid-template-rows:0 1fr}
   .panel{border-right:none;border-bottom:1px solid var(--line);max-height:52vh}
   .grid-wrap{padding-bottom:40px}
 }
@@ -277,3 +280,44 @@
 .tt-block .block-meta { flex-wrap: nowrap; overflow: hidden; }
 .tt-block .block-sec { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tt-block .block-room { flex-shrink: 0; }
+
+/* ---------------- COLLAPSIBLE PANEL ----------------
+   The panel is how courses get picked, so it opens by default. Once a schedule
+   is built it mostly competes with the grid for width, which is what collapsing
+   is for. The choice is remembered. */
+.fsc-root.panel-collapsed { --panel-w: 0px; }
+.fsc-root.panel-collapsed .panel {
+  padding-left: 0;
+  padding-right: 0;
+  border-right-color: transparent;
+  /* Hidden rather than merely clipped, so its controls leave the tab order
+     instead of lurking off-screen. Delayed until the slide has finished. */
+  visibility: hidden;
+  transition: visibility 0s linear 0.24s, padding 0.24s, border-color 0.24s;
+}
+.panel { transition: padding 0.24s, border-color 0.24s; }
+
+.fd-panel-toggle {
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--tx-3);
+  cursor: pointer;
+  transition: 0.15s;
+}
+.fd-panel-toggle:hover { color: var(--tx); border-color: rgba(255, 255, 255, 0.22); background: var(--panel-2); }
+.fd-panel-toggle svg { width: 17px; height: 17px; }
+/* In the panel header the toggle sits hard right of the brand. */
+.brand .fd-panel-toggle { margin-left: auto; }
+/* In the stage bar it leads, where the panel edge used to be. */
+.stage-bar .fd-panel-toggle { margin-right: 2px; }
+.stage-title-row { display: flex; align-items: center; gap: 12px; }
+
+/* With the reopen toggle present the stage bar has three children, and
+   space-between would push the title into the middle of the bar. */
+.stage-bar .stage-title { margin-right: auto; }
