@@ -35,12 +35,42 @@ loadEnv()
 const url = process.env.VITE_SUPABASE_URL
 const anon = process.env.VITE_SUPABASE_ANON_KEY
 
-if (!url || !anon || url.includes('your-project-ref')) {
+if (!url || !anon || url.includes('your-project-ref') || anon.includes('your_key_here')) {
   console.log(
     '\n\x1b[31mNo credentials.\x1b[0m Copy frontend/.env.example to ' +
-      'frontend/.env.local and fill in your project URL and anon key.\n',
+      'frontend/.env.local and fill in your project URL and key.\n' +
+      '\nThe quickest source for both is the "Connect" button at the top of\n' +
+      'the Supabase dashboard.\n',
   )
   process.exit(1)
+}
+
+// A secret key here would be compiled into the browser bundle and would bypass
+// RLS for anyone who opened devtools. Refuse rather than test against it.
+const isSecret =
+  anon.startsWith('sb_secret_') ||
+  (anon.startsWith('eyJ') && safeRole(anon) === 'service_role')
+
+if (isSecret) {
+  console.log(
+    '\n\x1b[31m\x1b[1mSTOP — that is a secret key.\x1b[0m\n\n' +
+      'VITE_SUPABASE_ANON_KEY holds a service_role / secret key. Anything in a\n' +
+      'VITE_ variable is compiled into the JavaScript bundle and served to every\n' +
+      'visitor, and this key bypasses Row Level Security completely.\n\n' +
+      'Replace it with the publishable key (sb_publishable_...) or the legacy\n' +
+      'anon key, and rotate the exposed one in Settings -> API Keys.\n',
+  )
+  process.exit(1)
+}
+
+/** Read the `role` claim from a JWT without verifying it. */
+function safeRole(jwt) {
+  try {
+    const payload = jwt.split('.')[1]
+    return JSON.parse(Buffer.from(payload, 'base64url').toString()).role
+  } catch {
+    return null
+  }
 }
 
 const db = createClient(url, anon, { auth: { persistSession: false } })

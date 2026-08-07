@@ -61,11 +61,21 @@ state instead of crashing.
 3. Create your own user under **Authentication → Users**, then insert it into
    `public.admins` (the SQL file ends with the exact statement).
 4. Turn **off** "Allow new users to sign up" — accounts come only from invites.
-5. Deploy the invite function:
+5. Copy the project URL and key into `frontend/.env.local`. The quickest
+   source for both is the **Connect** button at the top of the dashboard;
+   otherwise the URL is under **Settings → Data API** and the key under
+   **Settings → API Keys**. Either a publishable key (`sb_publishable_…`) or a
+   legacy `anon` key works — both map to the same `anon` role. Never use a
+   secret / `service_role` key here; it bypasses RLS and would be compiled
+   into the browser bundle.
+6. Deploy the invite function (no global install needed):
    ```bash
-   supabase functions deploy admin-invite
+   npx supabase login
+   npx supabase link --project-ref <your-ref>
+   npx supabase functions deploy admin-invite
    ```
-6. Copy the project URL and anon key into `frontend/.env.local`.
+   Do this **after** step 3 — the function authorises callers by looking them
+   up in `public.admins`, so without that row every invite returns 403.
 7. Check it:
    ```bash
    npm run verify:supabase
