@@ -73,17 +73,12 @@ function SignIn({ auth }) {
 
         {error && <div className="fd-note fd-note-warn mt-4">{error}</div>}
 
+        {/* Deliberately no self-service reset: resetPasswordForEmail is an
+            unauthenticated endpoint that will mail any address it is handed.
+            Resets are done from the Supabase dashboard instead. */}
         <button type="submit" className="primary mt-5 w-full justify-center" disabled={busy}>
           {busy ? 'Signing in…' : 'Sign in'}
         </button>
-
-        {/* Deliberately no self-service reset: it is an unauthenticated endpoint
-            that will mail any address it is handed. Resets are done from the
-            Supabase dashboard instead. */}
-        <p className="mt-4 mb-0 text-center text-[11.5px] leading-relaxed" style={{ color: 'var(--tx-3)' }}>
-          Locked out? Ask another administrator to reset your password from the
-          Supabase dashboard.
-        </p>
       </form>
     </div>
   )

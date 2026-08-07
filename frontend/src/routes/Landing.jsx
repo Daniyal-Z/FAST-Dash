@@ -60,7 +60,7 @@ export default function Landing() {
           className="mb-4 text-[11px] uppercase tracking-[0.18em]"
           style={{ fontFamily: 'var(--font-mono)', color: 'var(--acc)' }}
         >
-          FAST NUCES · Faisalabad
+          FAST NUCES · Lahore
         </p>
 
         <h1
@@ -116,12 +116,7 @@ export default function Landing() {
         </div>
 
         <p className="mt-14 text-[12.5px]" style={{ color: 'var(--tx-3)' }}>
-          Everything is saved in your browser — no account needed. Administrators publish new
-          sheets from{' '}
-          <Link to="/admin" style={{ color: 'var(--acc-2)' }}>
-            the admin page
-          </Link>
-          .
+          Everything is saved in your browser — no account needed.
         </p>
       </div>
     </div>
