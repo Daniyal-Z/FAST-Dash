@@ -32,6 +32,9 @@ const SEM_OF = { 1: "1st sem", 2: "2nd", 3: "3rd sem", 4: "4th", 5: "5th sem", 6
 const STORAGE_KEY = "fastdash:timetable:selected";
 const SCHOOL_KEY = "fastdash:timetable:school";
 
+/** Height of one lane: the block itself plus the gap beneath it. */
+const LANE_H = 84;
+
 function hhmmToMin(hhmm) {
   const [h, m] = String(hhmm).split(":").map(Number);
   return (h || 0) * 60 + (m || 0);
@@ -169,85 +172,82 @@ function TimetableBuilder({ data, label, school, onChangeSchool, canChangeSchool
   /* ---------- grid ---------- */
   const selected = useMemo(() => offerings.filter(o => selectedIds.has(o.id)), [offerings, selectedIds]);
   const alsoEnrolled = useMemo(() => selected.filter(o => !o.meetings.length), [selected]);
-  // A class occupies every period band it overlaps, not just the one it starts
-  // in — a 170-minute lab beginning at 11:30 runs to 14:20 and covers two.
-  // Each covered cell gets a segment of the same block so the bar reads as one
-  // continuous run, and so a clash in the *second* half is still detected.
-  const grid = useMemo(() => {
-    const g = {};
-    days.forEach(d => { g[d] = {}; periods.forEach(p => (g[d][p.p] = [])); });
-    selected.forEach(o => o.meetings.forEach(m => {
-      const span = Math.max(1, m.span || 1);
-      for (let i = 0; i < span; i++) {
-        const period = m.period + i;
-        if (!g[m.day] || !g[m.day][period]) continue;
-        g[m.day][period].push({
-          o,
-          room: m.room,
-          meeting: m,
-          seg: span === 1 ? 'single' : i === 0 ? 'start' : i === span - 1 ? 'end' : 'middle',
-        });
-      }
-    }));
-    return g;
-  }, [selected, days, periods]);
+  /* ---------- week layout ----------
+     Laid out on a real time axis rather than in per-period cells.
 
-  /* ---------- clashes ----------
-     Compared as real time intervals, not as shared period bands. Once classes
-     span several bands, two of them routinely touch the same band without
-     overlapping at all — an 08:30-10:20 lecture and a 10:30-12:20 one both sit
-     in the 10:00-11:30 column but never collide. Band-level detection would
-     report that as a clash and quickly train people to ignore the warning. */
+     Cells cannot express a class that outlasts its slot: each one carries its
+     own padding and border, so a block drawn across two of them is chopped in
+     half by the gutter between them and has to be reassembled visually, which
+     never quite works. Positioning by time instead means one class is one
+     block, its left edge from when it starts and its width from how long it
+     runs — so a 170-minute lab is simply a wider bar.
+
+     Classes that genuinely overlap are stacked into lanes, which is also what
+     makes a clash legible: two bars sitting on top of each other. */
+  const axis = useMemo(() => {
+    const from = hhmmToMin(periods[0].t.split("-")[0]);
+    const to = hhmmToMin(periods[periods.length - 1].t.split("-")[1]);
+    return { from, to, span: Math.max(1, to - from) };
+  }, [periods]);
+
+  const pct = useCallback(mins => ((mins - axis.from) / axis.span) * 100, [axis]);
+
   const bandBounds = useMemo(() => {
     const m = {};
     periods.forEach(p => {
-      const [from, to] = p.t.split("-");
-      m[p.p] = [hhmmToMin(from), hhmmToMin(to)];
+      const [a, b] = p.t.split("-");
+      m[p.p] = [hhmmToMin(a), hhmmToMin(b)];
     });
     return m;
   }, [periods]);
 
-  const intervalOf = useCallback(meeting => {
-    const span = Math.max(1, meeting.span || 1);
-    const fallbackStart = bandBounds[meeting.period]?.[0] ?? 0;
-    const fallbackEnd = bandBounds[meeting.period + span - 1]?.[1] ?? fallbackStart;
-    const start = meeting.start ? hhmmToMin(meeting.start) : fallbackStart;
-    const end = meeting.end ? hhmmToMin(meeting.end) : fallbackEnd;
-    return [start, Math.max(end, start + 1)];
-  }, [bandBounds]);
-
-  const overlap = useCallback((a, b) => {
-    const [as, ae] = intervalOf(a), [bs, be] = intervalOf(b);
-    return as < be && bs < ae;
-  }, [intervalOf]);
-
-  /** True when two different courses in this cell actually collide in time. */
-  const cellClashes = useCallback(cell => {
-    for (let i = 0; i < cell.length; i++) {
-      for (let j = i + 1; j < cell.length; j++) {
-        if (cell[i].o.id === cell[j].o.id) continue;
-        if (overlap(cell[i].meeting, cell[j].meeting)) return true;
-      }
-    }
-    return false;
-  }, [overlap]);
-
-  const conflicts = useMemo(() => {
-    // Count each colliding pair once, however many bands they share.
-    const seen = new Set();
+  const week = useMemo(() => {
     const byDay = {};
-    selected.forEach(o => o.meetings.forEach(m => ((byDay[m.day] ??= []).push({ o, m }))));
-    for (const list of Object.values(byDay)) {
-      for (let i = 0; i < list.length; i++) {
-        for (let j = i + 1; j < list.length; j++) {
-          if (list[i].o.id === list[j].o.id) continue;
-          if (!overlap(list[i].m, list[j].m)) continue;
-          seen.add([list[i].o.id, list[j].o.id].sort().join("|") + "@" + list[i].m.day);
+    let clashes = 0;
+
+    days.forEach(day => {
+      const items = [];
+      selected.forEach(o => o.meetings.forEach(m => {
+        if (m.day !== day) return;
+        // Data published before durations were parsed has no start/end, so
+        // fall back to the bounds of the bands it was recorded against.
+        const span = Math.max(1, m.span || 1);
+        const firstBand = bandBounds[m.period] ?? [axis.from, axis.from + 90];
+        const lastBand = bandBounds[m.period + span - 1] ?? firstBand;
+        const start = m.start ? hhmmToMin(m.start) : firstBand[0];
+        const end = m.end ? hhmmToMin(m.end) : lastBand[1];
+        items.push({ o, meeting: m, room: m.room, start, end: Math.max(end, start + 20) });
+      }));
+
+      items.sort((a, b) => a.start - b.start || a.end - b.end);
+
+      // Lane packing: reuse the first lane whose previous class has finished.
+      const laneEnds = [];
+      items.forEach(it => {
+        let lane = laneEnds.findIndex(end => end <= it.start);
+        if (lane === -1) { lane = laneEnds.length; laneEnds.push(0); }
+        laneEnds[lane] = it.end;
+        it.lane = lane;
+      });
+
+      const pairs = new Set();
+      items.forEach(a => items.forEach(b => {
+        if (a === b || a.o.id === b.o.id) return;
+        if (a.start < b.end && b.start < a.end) {
+          pairs.add([a.o.id, b.o.id].sort().join("|"));
+          a.clash = true;
         }
-      }
-    }
-    return seen.size;
-  }, [selected, overlap]);
+      }));
+      clashes += pairs.size;
+
+      byDay[day] = { items, lanes: Math.max(1, laneEnds.length) };
+    });
+
+    return { byDay, clashes };
+  }, [selected, days, bandBounds, axis]);
+
+  const conflicts = week.clashes;
+
 
   /* ---------- actions ---------- */
   const toggle = useCallback(id => setSelectedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; }), []);
@@ -260,16 +260,18 @@ function TimetableBuilder({ data, label, school, onChangeSchool, canChangeSchool
 
   /* ---------- download as PNG (canvas) ---------- */
   const downloadPNG = useCallback(() => {
+    // Mirrors the on-screen layout: a time axis, not a column per period, so a
+    // long class is drawn as one wide bar rather than several tiles.
     const scale = 2;
-    const dayColW = 96, timeColW = 190, headerH = 54, pad = 22, titleH = 64;
-    const rowHeights = days.map(d => {
-      const maxItems = Math.max(1, ...periods.map(p => grid[d][p.p].length));
-      return Math.max(64, 20 + maxItems * 58);
-    });
-    const gridW = dayColW + periods.length * timeColW;
+    const dayColW = 96, trackW = periods.length * 190, headerH = 54, pad = 22, titleH = 64;
+    const laneH = 62, blockH = 54;
+
+    const rowHeights = days.map(d => Math.max(66, week.byDay[d].lanes * laneH + 10));
+    const gridW = dayColW + trackW;
     const gridH = headerH + rowHeights.reduce((a, b) => a + b, 0);
     const footH = alsoEnrolled.length ? 24 + Math.ceil(alsoEnrolled.length / 3) * 20 : 0;
     const W = gridW + pad * 2, H = titleH + gridH + footH + pad * 2;
+
     const cv = document.createElement("canvas"); cv.width = W * scale; cv.height = H * scale;
     const ctx = cv.getContext("2d"); ctx.scale(scale, scale);
     ctx.fillStyle = "#0f1220"; ctx.fillRect(0, 0, W, H);
@@ -277,54 +279,71 @@ function TimetableBuilder({ data, label, school, onChangeSchool, canChangeSchool
     ctx.fillText("The Lineup", pad, pad + 20);
     ctx.fillStyle = "#7c9cff"; ctx.font = "600 13px 'JetBrains Mono', monospace";
     ctx.fillText(exportSubtitle, pad, pad + 44);
+
     const gx = pad, gy = pad + titleH;
-    // header row
+    const xOf = mins => gx + dayColW + ((mins - axis.from) / axis.span) * trackW;
+
+    // header
     ctx.fillStyle = "#171a2b"; ctx.fillRect(gx, gy, gridW, headerH);
-    ctx.strokeStyle = "rgba(255,255,255,0.08)"; ctx.lineWidth = 1;
     ctx.font = "600 12px 'JetBrains Mono', monospace"; ctx.textAlign = "center";
-    periods.forEach((p, i) => { const x = gx + dayColW + i * timeColW; ctx.fillStyle = "#9aa0b5"; ctx.fillText(p.t, x + timeColW / 2, gy + headerH / 2); });
+    periods.forEach(p => {
+      const [from, to] = p.t.split("-");
+      ctx.fillStyle = "#9aa0b5";
+      ctx.fillText(p.t, (xOf(hhmmToMin(from)) + xOf(hhmmToMin(to))) / 2, gy + headerH / 2);
+    });
     ctx.textAlign = "left";
+
     let yy = gy + headerH;
     days.forEach((d, di) => {
       const rh = rowHeights[di];
       ctx.fillStyle = "#141726"; ctx.fillRect(gx, yy, dayColW, rh);
       ctx.fillStyle = "#e8eaf2"; ctx.font = "700 16px 'Space Grotesk', sans-serif";
       ctx.fillText(d, gx + 16, yy + rh / 2);
-      periods.forEach((p, pi) => {
-        const cx = gx + dayColW + pi * timeColW; const cell = grid[d][p.p];
-        ctx.strokeStyle = "rgba(255,255,255,0.06)"; ctx.strokeRect(cx, yy, timeColW, rh);
-        cell.forEach((it, k) => {
-          // Continuation segments are covered by the bar drawn from the cell
-          // where the class starts. `k` still comes from the unfiltered list so
-          // that a clashing course keeps its own lane and nothing overlaps.
-          if (it.seg === "middle" || it.seg === "end") return;
-          const span = Math.max(1, it.meeting?.span || 1);
-          const bx = cx + 6, by = yy + 8 + k * 58, bw = span * timeColW - 12, bh = 50;
-          roundRect(ctx, bx, by, bw, bh, 8); ctx.fillStyle = it.o.bg; ctx.fill();
-          ctx.fillStyle = it.o.text; roundRect(ctx, bx, by, 4, bh, 2); ctx.fill();
-          ctx.fillStyle = it.o.text; ctx.font = "700 13px 'Space Grotesk', sans-serif";
-          ctx.fillText(trunc(ctx, it.o.course, bw - 20), bx + 12, by + 15);
-          ctx.font = "500 10px 'JetBrains Mono', monospace"; ctx.fillStyle = it.o.text;
-          ctx.globalAlpha = 0.85;
-          ctx.fillText(trunc(ctx, it.o.section + " · " + it.room, bw - 20), bx + 12, by + 30);
-          ctx.fillText(trunc(ctx, it.o.instructor, bw - 20), bx + 12, by + 42);
-          ctx.globalAlpha = 1;
-        });
+
+      // band dividers, from the same axis as the blocks
+      ctx.strokeStyle = "rgba(255,255,255,0.06)";
+      periods.slice(1).forEach(p => {
+        const x = xOf(bandBounds[p.p][0]);
+        ctx.beginPath(); ctx.moveTo(x, yy); ctx.lineTo(x, yy + rh); ctx.stroke();
       });
+
+      week.byDay[d].items.forEach(it => {
+        const bx = xOf(it.start) + 3;
+        const bw = Math.max(34, xOf(it.end) - xOf(it.start) - 6);
+        const by = yy + 6 + it.lane * laneH;
+        roundRect(ctx, bx, by, bw, blockH, 8); ctx.fillStyle = it.o.bg; ctx.fill();
+        if (it.clash) { ctx.strokeStyle = "#ff6b81"; ctx.lineWidth = 1.5; ctx.stroke(); ctx.lineWidth = 1; }
+        ctx.fillStyle = it.o.text; roundRect(ctx, bx, by, 4, blockH, 2); ctx.fill();
+
+        const inner = bw - 20;
+        ctx.fillStyle = it.o.text;
+        ctx.font = "700 13px 'Space Grotesk', sans-serif";
+        ctx.fillText(trunc(ctx, it.o.course, inner), bx + 12, by + 15);
+        ctx.font = "500 10px 'JetBrains Mono', monospace";
+        ctx.globalAlpha = 0.85;
+        ctx.fillText(trunc(ctx, it.o.section + " \u00b7 " + it.room, inner), bx + 12, by + 30);
+        const when = it.meeting.end ? `${it.meeting.start}\u2013${it.meeting.end}` : it.meeting.time;
+        ctx.fillText(trunc(ctx, it.o.instructor + " \u00b7 " + when, inner), bx + 12, by + 44);
+        ctx.globalAlpha = 1;
+      });
+
       yy += rh;
     });
+
     ctx.strokeStyle = "rgba(255,255,255,0.12)"; ctx.strokeRect(gx, gy, gridW, gridH);
+
     if (alsoEnrolled.length) {
       let fy = gy + gridH + 20;
       ctx.textAlign = "left"; ctx.fillStyle = "#9aa0b5"; ctx.font = "600 11px 'JetBrains Mono', monospace";
-      ctx.fillText("ALSO ENROLLED · NO FIXED SLOT", gx, fy); fy += 18;
+      ctx.fillText("ALSO ENROLLED \u00b7 NO FIXED SLOT", gx, fy); fy += 18;
       ctx.font = "500 12px 'Space Grotesk', sans-serif"; ctx.fillStyle = "#e8eaf2";
       alsoEnrolled.forEach((o, i) => {
         const col = i % 3, rowi = Math.floor(i / 3);
-        const label = (o.code ? o.code + " " : "") + o.course + " (" + (o.section !== "—" ? o.section : o.prog) + ")";
-        ctx.fillText(trunc(ctx, label, timeColW * 2.4), gx + col * (gridW / 3), fy + rowi * 20);
+        const label = (o.code ? o.code + " " : "") + o.course + " (" + (o.section !== "\u2014" ? o.section : o.prog) + ")";
+        ctx.fillText(trunc(ctx, label, gridW / 3 - 20), gx + col * (gridW / 3), fy + rowi * 20);
       });
     }
+
     let url;
     try { url = cv.toDataURL("image/png"); } catch (e) { url = null; }
     if (url) {
@@ -333,9 +352,9 @@ function TimetableBuilder({ data, label, school, onChangeSchool, canChangeSchool
         const a = document.createElement("a");
         a.href = url; a.download = exportFilename;
         document.body.appendChild(a); a.click(); a.remove();
-      } catch (e) { /* sandbox may block auto-download — preview covers it */ }
+      } catch (e) { /* preview modal covers it */ }
     }
-  }, [grid, days, periods, alsoEnrolled, exportSubtitle, exportFilename]);
+  }, [week, days, periods, axis, bandBounds, alsoEnrolled, exportSubtitle, exportFilename]);
 
   function roundRect(ctx, x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
   function trunc(ctx, s, max) { if (ctx.measureText(s).width <= max) return s; let t = s; while (t.length && ctx.measureText(t + "…").width > max) t = t.slice(0, -1); return t + "…"; }
@@ -512,58 +531,71 @@ function TimetableBuilder({ data, label, school, onChangeSchool, canChangeSchool
 
         <div className="grid-wrap">
           <div className="grid-scroll">
-            <div className="grid" style={{ gridTemplateColumns: `92px repeat(${periods.length}, minmax(150px, 1fr))` }}>
-            <div className="gh gh-corner"><span>DAY</span><span className="corner-slash">/</span><span>TIME</span></div>
-            {periods.map(p => <div key={p.p} className="gh gh-time">{p.t}</div>)}
+            <div className="tt" style={{ minWidth: `${92 + periods.length * 150}px` }}>
+              <div className="tt-corner"><span>DAY</span><span className="corner-slash">/</span><span>TIME</span></div>
 
-            {days.map(d => (
-              <React.Fragment key={d}>
-                <div className="gh gh-day">{d}</div>
+              <div className="tt-head">
                 {periods.map(p => {
-                  const cell = grid[d][p.p];
-                  const clash = cellClashes(cell);
+                  const [from, to] = p.t.split("-");
+                  const left = pct(hhmmToMin(from));
                   return (
-                    <div key={p.p} className={"cell" + (clash ? " cell-clash" : "")}>
-                      {cell.map((it, i) => {
-                        const head = it.seg === 'single' || it.seg === 'start';
+                    <span
+                      key={p.p}
+                      className="tt-head-cell"
+                      style={{ left: `${left}%`, width: `${pct(hhmmToMin(to)) - left}%` }}
+                    >
+                      {p.t}
+                    </span>
+                  );
+                })}
+              </div>
+
+              {days.map(d => {
+                const row = week.byDay[d];
+                return (
+                  <React.Fragment key={d}>
+                    <div className="tt-day">{d}</div>
+                    <div className="tt-row" style={{ height: `${row.lanes * LANE_H + 12}px` }}>
+                      {/* Band boundaries, drawn from the same axis as the blocks
+                          so the columns and the classes always line up. */}
+                      {periods.slice(1).map(p => (
+                        <span key={p.p} className="tt-divider" style={{ left: `${pct(bandBounds[p.p][0])}%` }} />
+                      ))}
+
+                      {row.items.map((it, i) => {
+                        const left = pct(it.start);
                         const when = it.meeting.end
                           ? `${it.meeting.start}–${it.meeting.end}`
                           : it.meeting.time;
                         return (
                           <div
                             key={it.o.id + "-" + i}
-                            className={"block block-" + it.seg}
-                            style={{ background: it.o.bg, color: it.o.text }}
+                            className={"tt-block" + (it.clash ? " tt-block-clash" : "")}
+                            style={{
+                              left: `calc(${left}% + 3px)`,
+                              width: `calc(${pct(it.end) - left}% - 6px)`,
+                              top: `${6 + it.lane * LANE_H}px`,
+                              background: it.o.bg,
+                              color: it.o.text,
+                            }}
                             title={`${it.o.code ? it.o.code + " · " : ""}${it.o.title || it.o.course} (${it.o.section}) — ${it.o.instructor} @ ${it.room} · ${when}${it.meeting.duration ? ` · ${it.meeting.duration} min` : ""}`}
                           >
-                            {head && <span className="block-spine" style={{ background: it.o.text }} />}
-                            {head ? (
-                              <>
-                                {it.o.code ? <div className="block-eyebrow">{it.o.code}</div> : null}
-                                <div className="block-code">{it.o.course}</div>
-                                <div className="block-meta">
-                                  <span className="block-sec">{it.o.section}</span>
-                                  <span className="block-room">{it.room}</span>
-                                </div>
-                                <div className="block-inst">
-                                  {it.o.instructor}
-                                  {it.meeting.span > 1 && <span className="block-runs"> · {when}</span>}
-                                </div>
-                              </>
-                            ) : (
-                              // Continuation of the same class: no repeated text,
-                              // just enough to show the slot is taken.
-                              <div className="block-cont">{it.seg === 'end' ? 'ends ' + it.meeting.end : '·'}</div>
-                            )}
+                            <span className="block-spine" style={{ background: it.o.text }} />
+                            {it.o.code ? <div className="block-eyebrow">{it.o.code}</div> : null}
+                            <div className="block-code">{it.o.course}</div>
+                            <div className="block-meta">
+                              <span className="block-sec">{it.o.section}</span>
+                              <span className="block-room">{it.room}</span>
+                            </div>
+                            <div className="block-inst">{it.o.instructor} · {when}</div>
                             <button className="block-x" onClick={() => toggle(it.o.id)} aria-label="Remove">×</button>
                           </div>
                         );
                       })}
                     </div>
-                  );
-                })}
-              </React.Fragment>
-            ))}
+                  </React.Fragment>
+                );
+              })}
             </div>
           </div>
           {selected.length === 0 && (

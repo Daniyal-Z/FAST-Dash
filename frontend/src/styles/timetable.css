@@ -191,29 +191,89 @@
   .grid-wrap{padding-bottom:40px}
 }
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
-/* ---------------- MULTI-PERIOD CLASSES ----------------
-   A class longer than its starting band (a 170-minute lab, say) renders one
-   segment per band it covers. Squaring off the inner corners makes the run
-   read as a single bar across the columns, while keeping each segment a real
-   child of its own cell — so heights line up and anything clashing in the
-   later band still stacks underneath rather than being overlapped. */
-.block-start { border-top-right-radius: 0; border-bottom-right-radius: 0; }
-.block-middle { border-radius: 0; padding-left: 10px; }
-.block-end { border-top-left-radius: 0; border-bottom-left-radius: 0; padding-left: 10px; }
+/* ---------------- WEEK GRID (time axis) ----------------
+   Classes are positioned by real time, not packed into per-period cells. A
+   cell layout cannot draw a class that outlasts its slot: each cell carries
+   its own padding and border, so a block crossing two of them is split by the
+   gutter between. Here each day is one continuous track, a class is one block
+   whose left edge and width come from its start and duration, and the period
+   columns are drawn as dividers from the same axis so the two always align. */
+.tt {
+  display: grid;
+  grid-template-columns: 92px 1fr;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--panel);
+}
 
-/* Continuation segments carry no repeated text, so they need a floor to keep
-   them the same height as the segment they continue. */
-.block-middle, .block-end {
-  min-height: 62px;
+.tt-corner {
+  position: sticky; left: 0; top: 0; z-index: 5;
+  display: flex; align-items: center; justify-content: center; gap: 3px;
+  background: var(--panel-2);
+  border-bottom: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+  font-family: 'JetBrains Mono'; font-size: 10px; color: var(--tx-3);
+}
+
+.tt-head {
+  position: sticky; top: 0; z-index: 3;
+  height: 46px;
+  background: var(--panel-2);
+  border-bottom: 1px solid var(--line);
+}
+.tt-head-cell {
+  position: absolute; top: 0; height: 100%;
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'JetBrains Mono'; font-size: 11.5px; font-weight: 600;
+  color: var(--tx-2); letter-spacing: .02em;
+  border-left: 1px solid var(--line-2);
+}
+.tt-head-cell:first-child { border-left: none; }
+
+.tt-day {
+  position: sticky; left: 0; z-index: 2;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--day);
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line-2);
+  font-family: 'Space Grotesk'; font-weight: 700; font-size: 15px; color: var(--tx);
+}
+
+.tt-row { position: relative; border-bottom: 1px solid var(--line-2); }
+.tt-divider { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--line-2); }
+
+.tt-block {
+  position: absolute;
+  height: 76px;
+  min-width: 74px;
+  border-radius: 10px;
+  padding: 8px 10px 8px 14px;
+  overflow: hidden;
   display: flex;
-  align-items: center;
-  justify-content: flex-end;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+  box-shadow: 0 2px 8px -4px rgba(0, 0, 0, .5);
+  animation: drop .28s cubic-bezier(.2, .8, .3, 1);
 }
-.block-cont {
-  font-family: 'JetBrains Mono';
-  font-size: 9.5px;
-  font-weight: 600;
-  opacity: 0.5;
-  white-space: nowrap;
-}
-.block-runs { opacity: 0.75; }
+/* A clash is two bars stacked in the same span of time, so the outline is on
+   the block rather than on a cell — there are no cells to outline. */
+.tt-block-clash { box-shadow: 0 0 0 1.5px var(--clash), 0 2px 8px -4px rgba(0, 0, 0, .5); }
+
+/* Without this the flex column squashes the last line to a few pixels and
+   clips it, rather than the block simply being tall enough. */
+.tt-block > * { flex-shrink: 0; }
+.tt-block .block-inst { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tt-block .block-eyebrow,
+.tt-block .block-code { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Narrow blocks (a short class is a narrow bar) must not let the section/room
+   line wrap onto two rows — that overflows the block and, with the content
+   centred, clips the course code off the top. Keep it to one line and let it
+   ellipsize instead, and anchor the content to the top so anything that does
+   overflow is lost from the bottom where it is least damaging. */
+.tt-block { justify-content: flex-start; }
+.tt-block .block-meta { flex-wrap: nowrap; overflow: hidden; }
+.tt-block .block-sec { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tt-block .block-room { flex-shrink: 0; }
