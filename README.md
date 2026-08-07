@@ -9,6 +9,9 @@ Two pages, one design language:
 - **Timetable** — your week as a grid, with clash detection and PNG export.
 - **Datesheet** — your exams in order, with same-slot clashes flagged.
 
+Each page shows whatever an administrator last published, and can be taken back
+down again from `/admin` when a sheet is out of date.
+
 ## How it works
 
 There is no backend. The React app talks to Supabase directly, so there is no

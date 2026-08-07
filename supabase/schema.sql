@@ -43,6 +43,11 @@ create table if not exists public.upload_log (
   created_by_email text
 );
 
+-- Added after the first release: taking a sheet down is as much an event worth
+-- recording as putting one up. Existing rows are all publishes.
+alter table public.upload_log
+  add column if not exists action text not null default 'publish';
+
 create index if not exists upload_log_created_at_idx
   on public.upload_log (created_at desc);
 
@@ -88,6 +93,15 @@ create policy "admins update datasets"
   to authenticated
   using (public.is_admin())
   with check (public.is_admin());
+
+-- Unpublishing: an admin can take a sheet down again, which returns the page
+-- to its "nothing published yet" state. Anonymous visitors have no DELETE
+-- policy at all, so the command is denied to them outright.
+drop policy if exists "admins delete datasets" on public.datasets;
+create policy "admins delete datasets"
+  on public.datasets for delete
+  to authenticated
+  using (public.is_admin());
 
 -- admins: you may always see your own row (this is how the app decides whether
 -- to show the admin UI); admins additionally see everyone.

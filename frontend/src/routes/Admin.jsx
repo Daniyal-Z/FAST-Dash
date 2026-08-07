@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useAuth } from '../hooks/useAuth.js'
-import { publishDataset } from '../lib/datasets.js'
+import { fetchAllMeta, publishDataset, unpublishDataset } from '../lib/datasets.js'
 import { archiveSource, inviteAdmin, listAdmins, listUploads, logUpload, revokeAdmin } from '../lib/admin.js'
 import { NotConfiguredScreen, Screen } from '../components/States.jsx'
 import { relativeTime } from '../lib/format.js'
@@ -107,7 +107,15 @@ const TABS = [
 function AdminHome({ auth }) {
   const [tab, setTab] = useState('publish')
   const [reloadKey, setReloadKey] = useState(0)
-  const bumpActivity = useCallback(() => setReloadKey((n) => n + 1), [])
+  const [live, setLive] = useState({})
+
+  const reload = useCallback(() => {
+    setReloadKey((n) => n + 1)
+    fetchAllMeta()
+      .then((rows) => setLive(Object.fromEntries(rows.map((r) => [r.kind, r]))))
+      .catch(() => {})
+  }, [])
+  useEffect(reload, [reload])
 
   return (
     <div className="fd-paper" style={{ minHeight: 'calc(100dvh - var(--nav-h))' }}>
@@ -140,7 +148,8 @@ function AdminHome({ auth }) {
               hint="The FSC timetable workbook — the one with the CS / SE / DS / AI / CY / CI sheets."
               userId={auth.user?.id}
               userEmail={auth.user?.email}
-              onPublished={bumpActivity}
+              live={live.timetable}
+              onChanged={reload}
             />
             <UploadCard
               kind="datesheet"
@@ -148,7 +157,8 @@ function AdminHome({ auth }) {
               hint="The exam workbook with the “Complete” sheet."
               userId={auth.user?.id}
               userEmail={auth.user?.email}
-              onPublished={bumpActivity}
+              live={live.datesheet}
+              onChanged={reload}
             />
           </div>
         )}
@@ -166,7 +176,7 @@ const PARSERS = {
   datesheet: async () => (await import('../lib/parsers/datesheet.js')).parseDatesheet,
 }
 
-function UploadCard({ kind, title, hint, userId, userEmail, onPublished }) {
+function UploadCard({ kind, title, hint, userId, userEmail, live, onChanged }) {
   const inputRef = useRef(null)
   const [file, setFile] = useState(null)
   const [result, setResult] = useState(null)
@@ -174,6 +184,7 @@ function UploadCard({ kind, title, hint, userId, userEmail, onPublished }) {
   const [phase, setPhase] = useState('idle') // idle | parsing | parsed | publishing | done
   const [error, setError] = useState(null)
   const [dragging, setDragging] = useState(false)
+  const [removing, setRemoving] = useState(false)
 
   const reset = () => {
     setFile(null); setResult(null); setLabel(''); setPhase('idle'); setError(null)
@@ -217,7 +228,7 @@ function UploadCard({ kind, title, hint, userId, userEmail, onPublished }) {
         })
       } catch (e) { console.warn('Could not write the activity log:', e) }
       setPhase('done')
-      onPublished?.()
+      onChanged?.()
     } catch (err) {
       setError(err.message || String(err))
       setPhase('parsed')
@@ -227,6 +238,27 @@ function UploadCard({ kind, title, hint, userId, userEmail, onPublished }) {
   const onDrop = (e) => {
     e.preventDefault(); setDragging(false)
     handleFile(e.dataTransfer.files?.[0])
+  }
+
+  const remove = async () => {
+    const ok = window.confirm(
+      `Take "${live.label}" down?\n\n` +
+        `The ${kind} page will go back to showing nothing until you publish again. ` +
+        `Students who already loaded it will see it disappear on their next visit.`,
+    )
+    if (!ok) return
+    setRemoving(true); setError(null)
+    try {
+      await unpublishDataset(kind)
+      try {
+        await logUpload({ kind, action: 'unpublish', label: live.label, userId, userEmail })
+      } catch (e) { console.warn('Could not write the activity log:', e) }
+      reset()
+      onChanged?.()
+    } catch (err) {
+      setError(err.message || String(err))
+    }
+    setRemoving(false)
   }
 
   return (
@@ -243,6 +275,25 @@ function UploadCard({ kind, title, hint, userId, userEmail, onPublished }) {
         )}
       </div>
       <p className="mt-1.5 mb-4 text-[12.5px] leading-relaxed" style={{ color: 'var(--tx-2)' }}>{hint}</p>
+
+      {live ? (
+        <div className="fd-live mb-4">
+          <span className="fd-live-dot" />
+          <span className="fd-live-main">
+            <span className="fd-live-label">{live.label}</span>
+            <span className="fd-live-meta">live · updated {relativeTime(live.updated_at)}</span>
+          </span>
+          <button className="fd-live-remove" onClick={remove} disabled={removing}>
+            {removing ? 'Removing…' : 'Remove'}
+          </button>
+        </div>
+      ) : (
+        <div className="fd-live fd-live-empty mb-4">
+          <span className="fd-live-main">
+            <span className="fd-live-meta">Nothing published — this page is empty for students.</span>
+          </span>
+        </div>
+      )}
 
       {phase === 'done' ? (
         <div className="fd-note fd-note-ok">
@@ -463,7 +514,17 @@ function ActivityTab({ reloadKey }) {
           {rows.map((r) => (
             <li key={r.id} className="fd-row">
               <span className="fd-pillstat"><b>{r.kind}</b></span>
-              <span className="flex-1 text-[13.5px]">{r.label}</span>
+              {r.action === 'unpublish' && (
+                <span className="fd-pillstat" style={{ color: 'var(--clash)', borderColor: 'rgba(255,107,129,.4)' }}>
+                  removed
+                </span>
+              )}
+              <span
+                className="flex-1 text-[13.5px]"
+                style={r.action === 'unpublish' ? { color: 'var(--tx-3)', textDecoration: 'line-through' } : undefined}
+              >
+                {r.label}
+              </span>
               <span className="text-[11.5px]" style={{ fontFamily: 'var(--font-mono)', color: 'var(--tx-3)' }}>
                 {r.created_by_email || 'unknown'} · {relativeTime(r.created_at)}
               </span>

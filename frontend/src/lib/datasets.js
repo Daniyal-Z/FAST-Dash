@@ -67,7 +67,12 @@ export async function loadDataset(kind) {
   const cached = readCache(kind)
   const meta = await fetchMeta(kind)
 
-  if (!meta) return null
+  if (!meta) {
+    // Unpublished since this browser last looked — drop the local copy so it
+    // cannot resurface on the next visit.
+    clearCache(kind)
+    return null
+  }
   if (cached && cached.updated_at === meta.updated_at) {
     return { ...cached, ...meta }
   }
@@ -92,9 +97,24 @@ export async function publishDataset({ kind, label, payload, sourceFilename, use
   )
   if (error) throw error
   // Drop the local copy so this browser re-fetches what it just published.
+  clearCache(kind)
+}
+
+/**
+ * Take a dataset down. The page it powers returns to its "nothing published
+ * yet" state; the archived source workbook in Storage is deliberately kept.
+ * Requires an authenticated admin (enforced by RLS).
+ */
+export async function unpublishDataset(kind) {
+  const { error } = await supabase.from('datasets').delete().eq('kind', kind)
+  if (error) throw error
+  clearCache(kind)
+}
+
+function clearCache(kind) {
   try {
     localStorage.removeItem(cacheKey(kind))
   } catch {
-    /* ignore */
+    /* storage unavailable — nothing to clear */
   }
 }

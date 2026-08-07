@@ -317,6 +317,53 @@ body {
 }
 .fd-pillstat b { color: var(--acc-2); font-weight: 600; }
 
+.fd-live {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 11px 13px;
+  border-radius: 11px;
+  background: rgba(93, 219, 160, 0.06);
+  border: 1px solid rgba(93, 219, 160, 0.28);
+}
+.fd-live-empty {
+  background: var(--panel-2);
+  border: 1px dashed var(--line);
+}
+.fd-live-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--ok);
+  box-shadow: 0 0 0 4px rgba(93, 219, 160, 0.16);
+  flex-shrink: 0;
+}
+.fd-live-main { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.fd-live-label {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 13.5px;
+  color: var(--tx);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fd-live-meta { font-family: var(--font-mono); font-size: 11px; color: var(--tx-3); }
+.fd-live-remove {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--tx-2);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: 0.15s;
+  white-space: nowrap;
+}
+.fd-live-remove:hover:not(:disabled) { color: var(--clash); border-color: var(--clash); }
+.fd-live-remove:disabled { opacity: 0.5; cursor: not-allowed; }
+
 .fd-row {
   display: flex;
   align-items: center;
