@@ -31,15 +31,35 @@ jobs:
 
       - name: Read one row from the datasets table
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          # Accept either a Secret or a Variable. They are configured on the
+          # same settings page under two different tabs, and putting them in
+          # the wrong one is an easy mistake with a confusing failure. The
+          # anon key is public by design, so a Variable is a fine place for it.
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL || vars.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY || vars.SUPABASE_ANON_KEY }}
+          HAS_URL_SECRET: ${{ secrets.SUPABASE_URL != '' }}
+          HAS_URL_VAR: ${{ vars.SUPABASE_URL != '' }}
+          HAS_KEY_SECRET: ${{ secrets.SUPABASE_ANON_KEY != '' }}
+          HAS_KEY_VAR: ${{ vars.SUPABASE_ANON_KEY != '' }}
         run: |
           set -euo pipefail
 
+          # Report where each value came from. Lengths are safe to print and
+          # catch the other classic mistake: a trailing space or newline.
+          echo "SUPABASE_URL      secret=${HAS_URL_SECRET} variable=${HAS_URL_VAR} length=${#SUPABASE_URL}"
+          echo "SUPABASE_ANON_KEY secret=${HAS_KEY_SECRET} variable=${HAS_KEY_VAR} length=${#SUPABASE_ANON_KEY}"
+
           if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_ANON_KEY:-}" ]; then
-            echo "::error::SUPABASE_URL and SUPABASE_ANON_KEY secrets are not set."
+            echo "::error::Could not read SUPABASE_URL / SUPABASE_ANON_KEY."
+            echo "Set them at Settings -> Secrets and variables -> Actions."
+            echo "Use the 'Secrets' or 'Variables' tab (either works), and the"
+            echo "'Repository' section — not Environment, Dependabot or Codespaces."
+            echo "Names are exact and case-sensitive, with no VITE_ prefix."
             exit 1
           fi
+
+          # A trailing newline pasted into the box breaks the URL silently.
+          SUPABASE_URL="${SUPABASE_URL%/}"
 
           status=$(curl -sS -o /tmp/body -w '%{http_code}' \
             "${SUPABASE_URL}/rest/v1/datasets?select=kind,updated_at" \
