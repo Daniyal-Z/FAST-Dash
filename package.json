@@ -1,0 +1,14 @@
+{
+  "name": "fast-dash-root",
+  "private": true,
+  "description": "Convenience wrapper. The app itself lives in frontend/ — this file exists only so the common commands work from the repository root. It deliberately declares NO dependencies: an earlier root package.json listed plotly here, which shadowed the real install in frontend/ and broke clean checkouts.",
+  "scripts": {
+    "dev": "npm --prefix frontend run dev",
+    "build": "npm --prefix frontend run build",
+    "preview": "npm --prefix frontend run preview",
+    "lint": "npm --prefix frontend run lint",
+    "install:app": "npm --prefix frontend install",
+    "verify:parsers": "npm --prefix frontend run verify:parsers",
+    "verify:supabase": "npm --prefix frontend run verify:supabase"
+  }
+}

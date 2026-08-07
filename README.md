@@ -48,11 +48,14 @@ fixtures/            real workbooks + the golden dataset, used by the verifier
 ## Getting started
 
 ```bash
-cd frontend
-npm install
-cp .env.example .env.local     # then fill in your Supabase URL + anon key
+npm run install:app            # installs into frontend/
+cp frontend/.env.example frontend/.env.local   # then fill in URL + key
 npm run dev
 ```
+
+The app lives in `frontend/`. The root `package.json` is a thin wrapper with no
+dependencies of its own, so `dev`, `build`, `lint`, `verify:parsers` and
+`verify:supabase` all work from the repository root or from `frontend/`.
 
 Without credentials the app still runs; every page shows a "not connected"
 state instead of crashing.
@@ -105,7 +108,6 @@ makes one read a day to prevent it.
 ## Verifying the parsers
 
 ```bash
-cd frontend
 npm run verify:parsers
 ```
 
