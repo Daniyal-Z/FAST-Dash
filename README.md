@@ -104,10 +104,26 @@ automatically.
 `/timetable` returns 404. It has to live inside the Root Directory — Vercel does
 not read a `vercel.json` from above it.
 
-Then add `SUPABASE_URL` and `SUPABASE_ANON_KEY` as **repository secrets** so
-`.github/workflows/keepalive.yml` can run. Free Supabase projects pause after
-seven days with no traffic, which a term break can easily hit; the workflow
-makes one read a day to prevent it.
+### Keeping the database awake
+
+Free Supabase projects pause after seven days with no API traffic, which a term
+break easily hits. `.github/workflows/keepalive.yml` makes one read a day to
+prevent that.
+
+Add `SUPABASE_URL` and `SUPABASE_ANON_KEY` under **Settings → Secrets and
+variables → Actions → New repository secret**. These are separate from the
+Vercel variables and have different names — no `VITE_` prefix.
+
+Two things about GitHub's scheduler are worth knowing:
+
+- **`schedule:` only fires on the default branch.** The workflow does nothing
+  until it is merged to `main`.
+- **GitHub disables scheduled workflows after 60 days with no commits**, and
+  only commits reset that clock. Left alone, a quiet break would switch off the
+  job that keeps the database awake. So the workflow checks how long it has
+  been since the last commit and, past 40 days, pushes a one-line heartbeat to
+  `.github/keepalive-heartbeat`. An actively developed repository never
+  produces one.
 
 ## Verifying the parsers
 

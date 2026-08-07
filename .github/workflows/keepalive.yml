@@ -3,11 +3,14 @@ name: Keep Supabase awake
 # Supabase pauses free projects after 7 consecutive days with no API traffic.
 # Term breaks can easily be that quiet, and a paused project means the site
 # shows nothing until someone restores it from the dashboard. One cheap read a
-# day is enough to prevent that.
+# day prevents that.
 #
 # Requires two repository secrets (Settings -> Secrets and variables -> Actions):
 #   SUPABASE_URL       https://<project-ref>.supabase.co
-#   SUPABASE_ANON_KEY  the anon/public key
+#   SUPABASE_ANON_KEY  the publishable / anon key
+#
+# Note these are NOT the same entries as the Vercel environment variables:
+# different names, different place, no VITE_ prefix.
 #
 # This replaces the old "Health Ping - Keep service alive" hack that existed to
 # fight Render's 15-minute spin-down.
@@ -17,10 +20,15 @@ on:
     - cron: '17 6 * * *' # 06:17 UTC daily
   workflow_dispatch:
 
+permissions:
+  contents: write # only for the heartbeat commit in the last step
+
 jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
       - name: Read one row from the datasets table
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -45,3 +53,32 @@ jobs:
             echo "::error::Unexpected status ${status} — the project may be paused."
             exit 1
           fi
+
+      # GitHub disables scheduled workflows after 60 days without a commit, and
+      # only commits reset that clock — not issues, tags or workflow runs. Left
+      # alone, a quiet term break would switch off the very job that keeps the
+      # database awake. So if the repository has gone quiet, make a commit.
+      #
+      # The 40-day threshold leaves 20 days of margin, and means an actively
+      # developed repository never sees one of these commits at all.
+      - name: Keep this workflow from being auto-disabled
+        run: |
+          set -euo pipefail
+
+          last=$(git log -1 --format=%ct)
+          now=$(date +%s)
+          days=$(( (now - last) / 86400 ))
+          echo "Last commit was ${days} day(s) ago."
+
+          if [ "$days" -lt 40 ]; then
+            echo "Repository is active — no heartbeat needed."
+            exit 0
+          fi
+
+          date -u +%Y-%m-%dT%H:%M:%SZ > .github/keepalive-heartbeat
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/keepalive-heartbeat
+          git commit -m "chore: keepalive heartbeat [skip ci]"
+          git push
+          echo "Pushed a heartbeat commit to reset GitHub's 60-day timer."
