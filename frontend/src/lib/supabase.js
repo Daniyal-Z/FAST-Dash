@@ -15,8 +15,9 @@ export const supabase = isConfigured
       auth: {
         persistSession: true,
         autoRefreshToken: true,
-        // Students never sign in; only /admin does. Detecting the session in
-        // the URL is needed for the invite / password-recovery email links.
+        // Students never sign in; only /admin does. This stays on so that the
+        // token in an invite link (and in a reset link sent from the Supabase
+        // dashboard) is picked up when the recipient lands on the site.
         detectSessionInUrl: true,
       },
     })

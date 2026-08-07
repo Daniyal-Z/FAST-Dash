@@ -36,22 +36,12 @@ function SignIn({ auth }) {
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
-  const [notice, setNotice] = useState(null)
 
   const submit = async (e) => {
     e.preventDefault()
-    setBusy(true); setError(null); setNotice(null)
+    setBusy(true); setError(null)
     const { error } = await auth.signIn(email.trim(), password)
     if (error) setError(error.message)
-    setBusy(false)
-  }
-
-  const forgot = async () => {
-    if (!email.trim()) { setError('Enter your email address first.'); return }
-    setBusy(true); setError(null)
-    const { error } = await auth.resetPassword(email.trim())
-    setError(error ? error.message : null)
-    if (!error) setNotice('Check your inbox for a password reset link.')
     setBusy(false)
   }
 
@@ -82,16 +72,18 @@ function SignIn({ auth }) {
         </div>
 
         {error && <div className="fd-note fd-note-warn mt-4">{error}</div>}
-        {notice && <div className="fd-note fd-note-ok mt-4">{notice}</div>}
 
         <button type="submit" className="primary mt-5 w-full justify-center" disabled={busy}>
           {busy ? 'Signing in…' : 'Sign in'}
         </button>
-        <button type="button" onClick={forgot} disabled={busy}
-          className="mt-3 w-full cursor-pointer border-0 bg-transparent text-[12px]"
-          style={{ color: 'var(--tx-3)' }}>
-          Forgot your password?
-        </button>
+
+        {/* Deliberately no self-service reset: it is an unauthenticated endpoint
+            that will mail any address it is handed. Resets are done from the
+            Supabase dashboard instead. */}
+        <p className="mt-4 mb-0 text-center text-[11.5px] leading-relaxed" style={{ color: 'var(--tx-3)' }}>
+          Locked out? Ask another administrator to reset your password from the
+          Supabase dashboard.
+        </p>
       </form>
     </div>
   )

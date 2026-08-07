@@ -49,9 +49,9 @@ export function useAuth() {
     status,
     signIn: (email, password) => supabase.auth.signInWithPassword({ email, password }),
     signOut: () => supabase.auth.signOut(),
-    resetPassword: (email) =>
-      supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/admin`,
-      }),
+    // No resetPassword here on purpose. resetPasswordForEmail is callable by
+    // anyone holding the anon key — which is everyone — and mails whatever
+    // address it is given. Password resets are done from the Supabase
+    // dashboard instead.
   }
 }
