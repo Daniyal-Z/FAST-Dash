@@ -168,6 +168,13 @@ nothing is published without a human confirming it first:
   claims 660 minutes, which the parser rejects as a data-entry error.
 - Sheet names differ per school, so the course-list sheets are identified by
   their header row (`Code` + `Course Title` + `Section`) rather than by name.
+- The banner year is not trustworthy. Version 1.0.4 of the Fall 2026 sheet was
+  headed "Fall 2025" while every batch inside it was unchanged. Since the
+  academic year is worked out from how long ago a batch enrolled, that one typo
+  shifted the whole timetable down a year and merged two batches into year 1.
+  The session year is therefore taken from the newest batch heading in the
+  workbook — there are dozens of those and they have to agree with each other —
+  and a disagreement with the banner is reported rather than silently resolved.
 
 Typos in the source survive on purpose. The parsers repair things that are
 plainly encoding damage — mojibake, HTML entities, doubled spaces — but never

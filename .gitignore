@@ -32,6 +32,9 @@ npm-debug.log*
 # supabase local
 supabase/.temp/
 
+# agent guidance — local only, not part of the published repo
+CLAUDE.md
+
 # local test scaffolding — seeded fixtures and browser-automation output
 .playwright-mcp/
 **/public/__dev/

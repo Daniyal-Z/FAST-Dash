@@ -261,17 +261,26 @@ function readColorMap(rows, warnings) {
  */
 export function parseTimetable(workbook) {
   const warnings = createWarnings()
+  // Sheets are read more than once — to find the programme sheets, to survey
+  // the batch years, and then to parse — so keep the parsed rows.
+  const rowCache = new Map()
   const sheetRows = (name) => {
+    if (rowCache.has(name)) return rowCache.get(name)
     const ws = workbook.Sheets[name]
-    if (!ws) return null
+    if (!ws) {
+      rowCache.set(name, null)
+      return null
+    }
     // raw:false keeps Excel's own formatting for times; defval preserves the
     // column positions of empty cells so our fixed indexes stay aligned.
-    return XLSX.utils.sheet_to_json(ws, {
+    const rows = XLSX.utils.sheet_to_json(ws, {
       header: 1,
       raw: false,
       defval: null,
       blankrows: true,
     })
+    rowCache.set(name, rows)
+    return rows
   }
 
   const combined = sheetRows('Combined TT')
@@ -312,10 +321,9 @@ export function parseTimetable(workbook) {
   if (!colorRows) warnings.add('Sheet "ColorData" not found — all courses will use the fallback colour')
   const colors = readColorMap(colorRows, warnings)
 
-  // Session year, e.g. "…TIME TABLE Fall 2026 (V1.0.2)" -> 2026. Used to turn
-  // a batch's intake year into an academic year for section-less rows.
+  // The banner, e.g. "…TIME TABLE Fall 2026 (V1.0.2)".
   let label = null
-  let sessionYear = null
+  let headingYear = null
   if (combined) {
     for (const row of combined.slice(0, 3)) {
       for (const raw of row || []) {
@@ -323,22 +331,13 @@ export function parseTimetable(workbook) {
         if (s && /time\s*table/i.test(s)) {
           label = s.replace(/^.*?TIME\s*TABLE\s*/i, '').trim() || s
           const m = /\b(19|20)\d{2}\b/.exec(s)
-          if (m) sessionYear = Number(m[0])
+          if (m) headingYear = Number(m[0])
           break
         }
       }
       if (label) break
     }
   }
-  if (!sessionYear) {
-    sessionYear = new Date().getFullYear()
-    warnings.add(`Could not read the session year from the workbook — assuming ${sessionYear}`)
-  }
-
-  const offerings = []
-  const byKey = new Map()
-  let nextId = 1
-
   const programSheets = findProgramSheets(workbook, sheetRows)
   if (!programSheets.length) {
     throw new Error(
@@ -346,6 +345,47 @@ export function parseTimetable(workbook) {
         'containing "Code", "Course Title" and "Section".',
     )
   }
+
+  /*
+   * The session year decides which academic year each batch sits in, so getting
+   * it wrong shifts the entire timetable by a year.
+   *
+   * It is deliberately NOT taken from the banner. That is a single hand-typed
+   * field: version 1.0.4 of the Fall 2026 sheet was headed "Fall 2025" while
+   * every batch in it was unchanged, which put the 2026 intake in year 0, the
+   * clamp pulled it back to year 1, and every batch below slid down one.
+   *
+   * The batch headings are the sounder signal — there are dozens of them and
+   * they must agree with one another for the sheet to make sense at all. The
+   * newest batch present is, by definition, this session's incoming year.
+   */
+  const batchYears = []
+  for (const { name, headerRow } of programSheets) {
+    const rows = sheetRows(name)
+    for (let r = headerRow + 1; r < rows.length; r++) {
+      const row = rows[r]
+      if (isBlankRow(row)) continue
+      const headerLabel = detectHeaderLabel(row, cell(row, COL.code), cell(row, COL.title))
+      if (headerLabel === null) continue
+      const y = batchYearFromHeader(headerLabel)
+      if (y) batchYears.push(y)
+    }
+  }
+
+  let sessionYear = batchYears.length ? Math.max(...batchYears) : headingYear
+  if (!sessionYear) {
+    sessionYear = new Date().getFullYear()
+    warnings.add(`Could not read the session year from the workbook — assuming ${sessionYear}`)
+  } else if (headingYear && headingYear !== sessionYear) {
+    warnings.add(
+      `The workbook heading says ${headingYear}, but its newest batch is ${sessionYear}. ` +
+        `Going with ${sessionYear} — check the heading, and the label below, before publishing.`,
+    )
+  }
+
+  const offerings = []
+  const byKey = new Map()
+  let nextId = 1
 
   for (const { name: sheetName, headerRow } of programSheets) {
     const rows = sheetRows(sheetName)

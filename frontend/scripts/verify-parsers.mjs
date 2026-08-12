@@ -198,6 +198,47 @@ for (const { o, m } of spanned.slice(0, 3)) {
   console.log(`      \x1b[2m${o.code} ${o.course} · ${m.day} ${m.start}-${m.end} (${m.duration}min) → periods ${m.period}..${m.period + m.span - 1}\x1b[0m`)
 }
 
+/* ------------------------------------------------- year / semester sanity */
+//
+// Every timetable workbook, not just the golden one. An undergraduate section
+// carries its own year in its name — BCS-3A is a second year — so the year the
+// parser derives from the batch heading must agree with it. When it does not,
+// the whole timetable has shifted: v1.0.4 of the Fall 2026 sheet was headed
+// "Fall 2025", which slid every batch down a year and merged two of them into
+// year 1. This is the check that catches that.
+console.log('\n\x1b[1mYear assignment across every timetable workbook\x1b[0m')
+
+const timetableFiles = fs
+  .readdirSync(fixtures)
+  .filter((f) => f.endsWith('.xlsx'))
+  .sort()
+
+for (const file of timetableFiles) {
+  const parsed = parseTimetable(read(path.join(fixtures, file)))
+
+  // year -> the set of undergraduate semesters filed under it
+  const semsByYear = new Map()
+  for (const o of parsed.data.offerings) {
+    if (!o.primSection || !o.prog.startsWith('B')) continue
+    const m = /^[A-Za-z]{3}-(\d)/.exec(o.primSection)
+    if (!m) continue
+    if (!semsByYear.has(o.year)) semsByYear.set(o.year, new Set())
+    semsByYear.get(o.year).add(Number(m[1]))
+  }
+
+  const wrong = []
+  for (const [year, sems] of semsByYear) {
+    for (const sem of sems) if (Math.ceil(sem / 2) !== year) wrong.push(`year ${year} holds semester ${sem}`)
+  }
+
+  wrong.length === 0
+    ? pass(`${file.padEnd(34)} each year holds exactly its own semester`)
+    : fail(`${file}: ${wrong.slice(0, 4).join('; ')}`)
+
+  const shifted = parsed.warnings.find((w) => w.includes('newest batch'))
+  if (shifted) console.log(`      \x1b[33m! ${shifted}\x1b[0m`)
+}
+
 /* --------------------------------------------------------- teacher names */
 const named = got.offerings.filter((o) => o.instructorFull && o.instructorFull !== 'TBA')
 const fuller = named.filter((o) => o.instructorFull !== o.instructor)
