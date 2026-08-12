@@ -168,13 +168,19 @@ nothing is published without a human confirming it first:
   claims 660 minutes, which the parser rejects as a data-entry error.
 - Sheet names differ per school, so the course-list sheets are identified by
   their header row (`Code` + `Course Title` + `Section`) rather than by name.
-- The banner year is not trustworthy. Version 1.0.4 of the Fall 2026 sheet was
-  headed "Fall 2025" while every batch inside it was unchanged. Since the
-  academic year is worked out from how long ago a batch enrolled, that one typo
-  shifted the whole timetable down a year and merged two batches into year 1.
-  The session year is therefore taken from the newest batch heading in the
-  workbook — there are dozens of those and they have to agree with each other —
-  and a disagreement with the banner is reported rather than silently resolved.
+- Nothing in the workbook decides the academic year. Whether the 2024 intake is
+  in its second or third year depends on when you are looking, not on any cell,
+  so the year is worked out from the clock: Fall runs August to December, Spring
+  January to June, and a Spring student enrolled the *previous* Fall, so both
+  halves of one academic year share an intake year. Version 1.0.4 of the Fall
+  2026 sheet was headed "Fall 2025", which under the old scheme put its 2026
+  intake in year 0 and slid every batch below it down one. The batch headings
+  are still read as a cross-check, and a workbook whose newest batch is not the
+  current intake is reported before it can be published.
+
+  `parseTimetable` takes an injectable `now` for this reason; `verify-parsers`
+  pins it, since otherwise the fixtures would start failing by themselves next
+  August.
 
 Typos in the source survive on purpose. The parsers repair things that are
 plainly encoding damage — mojibake, HTML entities, doubled spaces — but never

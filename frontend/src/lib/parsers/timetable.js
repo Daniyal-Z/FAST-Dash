@@ -215,6 +215,28 @@ function findProgramSheets(workbook, readRows) {
   return found
 }
 
+/**
+ * The academic session containing a given date.
+ *
+ * Fall runs August to December and Spring January to June. July is the gap
+ * between them, and it is when the next Fall's timetable gets prepared, so it
+ * counts as Fall.
+ *
+ * `intakeYear` is the year the current first-years enrolled, and it is what the
+ * year maths needs: a Spring 2027 student started in Fall 2026, so Spring's
+ * intake year is the calendar year minus one. `displayYear` is what a human
+ * calls the session.
+ */
+export function sessionFor(date) {
+  const year = date.getFullYear()
+  const isFall = date.getMonth() >= 6 // July onwards
+  return {
+    term: isFall ? 'Fall' : 'Spring',
+    displayYear: year,
+    intakeYear: isFall ? year : year - 1,
+  }
+}
+
 /** Semester number -> academic year. Semesters 1&2 are year 1, and so on. */
 function semToYear(sem) {
   return Math.ceil(sem / 2)
@@ -257,9 +279,10 @@ function readColorMap(rows, warnings) {
 
 /**
  * @param {import('xlsx').WorkBook} workbook
+ * @param {{ now?: Date }} [options] injected clock, so tests are deterministic
  * @returns {{ data: object, stats: object, warnings: string[], label: string }}
  */
-export function parseTimetable(workbook) {
+export function parseTimetable(workbook, { now = new Date() } = {}) {
   const warnings = createWarnings()
   // Sheets are read more than once — to find the programme sheets, to survey
   // the batch years, and then to parse — so keep the parsed rows.
@@ -321,23 +344,22 @@ export function parseTimetable(workbook) {
   if (!colorRows) warnings.add('Sheet "ColorData" not found — all courses will use the fallback colour')
   const colors = readColorMap(colorRows, warnings)
 
-  // The banner, e.g. "…TIME TABLE Fall 2026 (V1.0.2)".
-  let label = null
-  let headingYear = null
+  // The banner, e.g. "…TIME TABLE Fall 2026 (V1.0.2)". Only the version tag is
+  // taken from it now; its year is not trusted for anything.
+  let banner = null
   if (combined) {
     for (const row of combined.slice(0, 3)) {
       for (const raw of row || []) {
         const s = clean(raw)
         if (s && /time\s*table/i.test(s)) {
-          label = s.replace(/^.*?TIME\s*TABLE\s*/i, '').trim() || s
-          const m = /\b(19|20)\d{2}\b/.exec(s)
-          if (m) headingYear = Number(m[0])
+          banner = s.replace(/^.*?TIME\s*TABLE\s*/i, '').trim() || s
           break
         }
       }
-      if (label) break
+      if (banner) break
     }
   }
+
   const programSheets = findProgramSheets(workbook, sheetRows)
   if (!programSheets.length) {
     throw new Error(
@@ -347,18 +369,23 @@ export function parseTimetable(workbook) {
   }
 
   /*
-   * The session year decides which academic year each batch sits in, so getting
-   * it wrong shifts the entire timetable by a year.
+   * Which academic year each batch is in depends on when *now* is, not on
+   * anything written in the workbook. A student who enrolled in 2024 is a
+   * second year during 2025-26 and a third year during 2026-27, and no cell in
+   * the sheet has to be edited for that to become true.
    *
-   * It is deliberately NOT taken from the banner. That is a single hand-typed
-   * field: version 1.0.4 of the Fall 2026 sheet was headed "Fall 2025" while
-   * every batch in it was unchanged, which put the 2026 intake in year 0, the
-   * clamp pulled it back to year 1, and every batch below slid down one.
+   * Reading it from the sheet made a single mistyped cell able to move the
+   * whole timetable: version 1.0.4 of the Fall 2026 workbook was headed "Fall
+   * 2025", which put its 2026 intake in year 0 and slid every batch below it
+   * down one. The calendar cannot be mistyped.
    *
-   * The batch headings are the sounder signal — there are dozens of them and
-   * they must agree with one another for the sheet to make sense at all. The
-   * newest batch present is, by definition, this session's incoming year.
+   * The batch headings are still read, as a cross-check — the newest batch in
+   * a current workbook should be the current intake, and when it is not, that
+   * is worth telling the administrator about before they publish.
    */
+  const session = sessionFor(now)
+  const sessionYear = session.intakeYear
+
   const batchYears = []
   for (const { name, headerRow } of programSheets) {
     const rows = sheetRows(name)
@@ -372,14 +399,13 @@ export function parseTimetable(workbook) {
     }
   }
 
-  let sessionYear = batchYears.length ? Math.max(...batchYears) : headingYear
-  if (!sessionYear) {
-    sessionYear = new Date().getFullYear()
-    warnings.add(`Could not read the session year from the workbook — assuming ${sessionYear}`)
-  } else if (headingYear && headingYear !== sessionYear) {
+  const newestBatch = batchYears.length ? Math.max(...batchYears) : null
+  if (newestBatch && newestBatch !== sessionYear) {
     warnings.add(
-      `The workbook heading says ${headingYear}, but its newest batch is ${sessionYear}. ` +
-        `Going with ${sessionYear} — check the heading, and the label below, before publishing.`,
+      `It is ${session.term} ${session.displayYear}, so the current intake should be ` +
+        `${sessionYear}, but the newest batch in this workbook is ${newestBatch}. ` +
+        `Years are numbered from ${sessionYear} — if this is last year's timetable, or ` +
+        `next year's, the years shown will be off by ${Math.abs(newestBatch - sessionYear)}.`,
     )
   }
 
@@ -552,8 +578,15 @@ export function parseTimetable(workbook) {
   const tally = (key) =>
     offerings.reduce((acc, o) => ((acc[o[key]] = (acc[o[key]] || 0) + 1), acc), {})
 
+  // Built from the session rather than the banner, since the banner is the very
+  // field that proved unreliable; the version tag is kept because it is useful
+  // and is the one part of the banner nobody gets wrong.
+  const version = banner && /\(?\bv\s*\d+(\.\d+)*\)?/i.exec(banner)
+  const sessionLabel =
+    `${session.term} ${session.displayYear}` + (version ? ` ${version[0].trim()}` : '')
+
   return {
-    label: label || `Timetable ${sessionYear}`,
+    label: sessionLabel,
     data: { days: DAYS, periods, offerings },
     warnings: warnings.list,
     stats: {

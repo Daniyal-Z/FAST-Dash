@@ -21,6 +21,13 @@ const fixtures = path.resolve(here, '../../fixtures')
 
 const read = (file) => XLSX.read(fs.readFileSync(file), { type: 'buffer', cellDates: false })
 
+// The academic year is now worked out from the clock, so the parse has to be
+// given a fixed one. Without this these checks would start failing by
+// themselves next August, which is the least useful kind of failing test.
+// Both timetable fixtures are Fall 2026 sheets.
+const DURING_FALL_2026 = new Date('2026-09-15T00:00:00Z')
+const parseAt = (file, now = DURING_FALL_2026) => parseTimetable(read(file), { now })
+
 let failures = 0
 const fail = (msg) => {
   failures++
@@ -32,7 +39,7 @@ const pass = (msg) => console.log(`  \x1b[32m✓\x1b[0m ${msg}`)
 console.log('\n\x1b[1mTimetable parser vs. golden fixture\x1b[0m')
 
 const golden = JSON.parse(fs.readFileSync(path.join(fixtures, 'timetable-golden.json'), 'utf8'))
-const result = parseTimetable(read(path.join(fixtures, 'FSC_F26_TT_v1.0.2_06082026.xlsx')))
+const result = parseAt(path.join(fixtures, 'FSC_F26_TT_v1.0.2_06082026.xlsx'))
 const got = result.data
 
 /**
@@ -214,7 +221,7 @@ const timetableFiles = fs
   .sort()
 
 for (const file of timetableFiles) {
-  const parsed = parseTimetable(read(path.join(fixtures, file)))
+  const parsed = parseAt(path.join(fixtures, file))
 
   // year -> the set of undergraduate semesters filed under it
   const semsByYear = new Map()
