@@ -457,11 +457,17 @@ export function parseTimetable(workbook, { now = new Date() } = {}) {
         continue
       }
 
-      // The batch heading is the authority on which year a course belongs to.
-      // For undergraduate sections the semester digit agrees with it exactly;
-      // for graduate sections it does not (MCS-1A can be a third-year batch),
-      // so the section is only a fallback for rows outside any batch block.
-      let year = batchYear ? sessionYear - batchYear + 1 : null
+      // An undergraduate section states its own year. BCS-3A is a second year
+      // and BCS-4A is the same cohort a semester later, whatever the banner,
+      // the batch headings or the calendar happen to say — so read it straight
+      // off the section and the year cannot drift.
+      //
+      // Graduate sections do not work like that: MCS-1A shows up under the 2026
+      // intake and again under the 2024 one, so the section name says nothing
+      // about the year. For those, and for rows carrying no section at all, the
+      // batch heading and the current session decide.
+      let year = parsed && prog.startsWith('B') ? semToYear(parsed.sem) : null
+      if (year === null && batchYear) year = sessionYear - batchYear + 1
       if (year === null && parsed) year = semToYear(parsed.sem)
       if (year === null) {
         warnings.add('Row skipped: cannot determine year', `${sheetName}!A${r + 1} ${code}`)

@@ -242,6 +242,27 @@ for (const file of timetableFiles) {
     ? pass(`${file.padEnd(34)} each year holds exactly its own semester`)
     : fail(`${file}: ${wrong.slice(0, 4).join('; ')}`)
 
+  // An undergraduate year is read off the section, so it must not move when
+  // the clock does. This is the property that actually matters: it is what
+  // stops a mistyped banner, a stale sheet or a July upload from shifting the
+  // timetable. (The check above is largely true by construction now; this one
+  // is not.)
+  const undergradYears = (at) => {
+    const t = {}
+    for (const o of parseAt(path.join(fixtures, file), at).data.offerings) {
+      if (!o.primSection || !o.prog.startsWith('B')) continue
+      t[o.year] = (t[o.year] || 0) + 1
+    }
+    return JSON.stringify(t, Object.keys(t).sort())
+  }
+  const atFall = undergradYears(new Date('2026-09-15T00:00:00Z'))
+  const atSpring = undergradYears(new Date('2027-02-01T00:00:00Z'))
+  const atWrong = undergradYears(new Date('2029-03-01T00:00:00Z'))
+
+  atFall === atSpring && atFall === atWrong
+    ? pass(`${' '.repeat(36)}and does not move when the clock does`)
+    : fail(`${file}: undergraduate years change with the date — Fall ${atFall}, Spring ${atSpring}, later ${atWrong}`)
+
   const shifted = parsed.warnings.find((w) => w.includes('newest batch'))
   if (shifted) console.log(`      \x1b[33m! ${shifted}\x1b[0m`)
 }

@@ -168,19 +168,24 @@ nothing is published without a human confirming it first:
   claims 660 minutes, which the parser rejects as a data-entry error.
 - Sheet names differ per school, so the course-list sheets are identified by
   their header row (`Code` + `Course Title` + `Section`) rather than by name.
-- Nothing in the workbook decides the academic year. Whether the 2024 intake is
-  in its second or third year depends on when you are looking, not on any cell,
-  so the year is worked out from the clock: Fall runs August to December, Spring
-  January to June, and a Spring student enrolled the *previous* Fall, so both
-  halves of one academic year share an intake year. Version 1.0.4 of the Fall
-  2026 sheet was headed "Fall 2025", which under the old scheme put its 2026
-  intake in year 0 and slid every batch below it down one. The batch headings
-  are still read as a cross-check, and a workbook whose newest batch is not the
-  current intake is reported before it can be published.
+- An undergraduate section states its own year, so that is where it is read
+  from: `BCS-3A` is a second year and `BCS-4A` is the same cohort a semester
+  later. That makes undergraduate years — around nine tenths of the data —
+  immune to the banner, the batch headings and the clock alike. Version 1.0.4 of
+  the Fall 2026 sheet is headed "Fall 2025", and it no longer matters.
 
-  `parseTimetable` takes an injectable `now` for this reason; `verify-parsers`
-  pins it, since otherwise the fixtures would start failing by themselves next
-  August.
+  Graduate sections are not self-describing: `MCS-1A` appears under both the
+  2026 and the 2024 intakes. Those, and rows carrying no section, fall back to
+  the batch heading plus the current session, worked out from the clock — Fall
+  is August to December, Spring January to June, and a Spring student enrolled
+  the *previous* Fall, so both halves of one academic year share an intake year.
+  A workbook whose newest batch is not the current intake is reported before it
+  can be published.
+
+  `parseTimetable` takes an injectable `now` so this is testable; `verify-parsers`
+  pins it, since the fixtures would otherwise start failing by themselves next
+  August, and separately asserts that undergraduate years do not move when the
+  clock does.
 
 Typos in the source survive on purpose. The parsers repair things that are
 plainly encoding damage — mojibake, HTML entities, doubled spaces — but never
