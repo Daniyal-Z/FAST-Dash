@@ -166,8 +166,22 @@ nothing is published without a human confirming it first:
   90-minute bands, but 125 courses run 170 minutes and a couple run 240, so
   `Duration in Minutes` decides how many bands a class really occupies. One row
   claims 660 minutes, which the parser rejects as a data-entry error.
-- Sheet names differ per school, so the course-list sheets are identified by
-  their header row (`Code` + `Course Title` + `Section`) rather than by name.
+- No two schools lay their workbook out alike, so nothing is addressed by name
+  or position. Course-list sheets are found by their header row (`Code` +
+  `Course Title` + `Section`); Computing calls them CS, SE, DS, AI, CY, CI while
+  Management has a single "Course List". Columns are located by heading —
+  Computing puts Code/Title/Section first, Management puts them at 5, 6 and 7
+  behind Batch/Semester/Core-or-Elective.
+- Some workbooks carry no schedule in the course list at all. Management's has
+  no Day/Slot/Venue columns; its schedule exists only in the room-by-time grid,
+  so that is read and joined back on course title and section. The grid is never
+  used as the catalogue — it has already lost course codes, full titles and the
+  core/elective split.
+- Period bands are not a constant either: Computing runs eight 90-minute bands
+  written `08:30-10:00`, Management seven 80-minute ones written
+  `8:30 AM to 9:50 AM`. Both are read from the grid.
+- Programme codes are not always three letters, and not always letters:
+  `BSBA-1F1` and `MB2-3A` both occur.
 - An undergraduate section states its own year, so that is where it is read
   from: `BCS-3A` is a second year and `BCS-4A` is the same cohort a semester
   later. That makes undergraduate years — around nine tenths of the data —

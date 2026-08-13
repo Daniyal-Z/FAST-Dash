@@ -175,7 +175,7 @@ const PARSERS = {
 }
 
 function UploadCard({ kind, title, hint, userId, userEmail, live, perSchool, onChanged }) {
-  const [school, setSchool] = useState(perSchool ? SCHOOLS[0].code : ALL_SCHOOLS)
+  const [school, setSchoolState] = useState(perSchool ? SCHOOLS[0].code : ALL_SCHOOLS)
   const [pendingRemove, setPendingRemove] = useState(null)
   const inputRef = useRef(null)
   const [file, setFile] = useState(null)
@@ -189,6 +189,20 @@ function UploadCard({ kind, title, hint, userId, userEmail, live, perSchool, onC
   const reset = () => {
     setFile(null); setResult(null); setLabel(''); setPhase('idle'); setError(null)
     if (inputRef.current) inputRef.current.value = ''
+  }
+
+  /*
+   * Switching school throws away whatever is loaded.
+   *
+   * The two used to be independent, which meant you could parse one school's
+   * workbook, change this dropdown, and publish that workbook under the other
+   * school. It is silent and it is easy to do by accident — it is how FSC's
+   * timetable ended up filed under FSM. The file has to be chosen again for
+   * the school it belongs to.
+   */
+  const setSchool = (next) => {
+    setSchoolState(next)
+    if (file || result) reset()
   }
 
   const handleFile = async (f) => {
@@ -365,6 +379,8 @@ function UploadCard({ kind, title, hint, userId, userEmail, live, perSchool, onC
               result={result}
               label={label}
               setLabel={setLabel}
+              school={perSchool ? school : null}
+              filename={file?.name}
               busy={phase === 'publishing'}
               onPublish={publish}
             />
@@ -393,8 +409,21 @@ function UploadCard({ kind, title, hint, userId, userEmail, live, perSchool, onC
   )
 }
 
-function Report({ result, label, setLabel, busy, onPublish }) {
+function Report({ result, label, setLabel, school, filename, busy, onPublish }) {
   const { stats, warnings } = result
+
+  /*
+   * A cheap guard against the mistake that put FSC's timetable under FSM: the
+   * workbooks are named after their school, so if the filename names a
+   * different one from the dropdown, say so. It is a heuristic — a file named
+   * neutrally raises nothing — but it costs nothing and catches the obvious case.
+   */
+  const mismatch =
+    school && filename
+      ? SCHOOLS.map((x) => x.code).find(
+          (code) => code !== school && new RegExp(`\b${code}\b`, 'i').test(filename),
+        )
+      : null
   const entries = Object.entries(stats).filter(([, v]) => typeof v === 'number')
   const groups = Object.entries(stats).filter(([, v]) => v && typeof v === 'object')
 
@@ -435,6 +464,14 @@ function Report({ result, label, setLabel, busy, onPublish }) {
         </p>
       </div>
 
+      {mismatch && (
+        <div className="fd-note fd-note-warn mt-4">
+          <strong>Check the school.</strong> You are publishing to <b>{school}</b>, but the file is
+          named <code>{filename}</code>, which mentions <b>{mismatch}</b>. Publishing one school's
+          workbook under another is silent once it is live.
+        </div>
+      )}
+
       {warnings.length > 0 && (
         <div className="fd-note fd-note-warn mt-4">
           <strong>{warnings.length} thing{warnings.length === 1 ? '' : 's'} to look at</strong>
@@ -446,7 +483,7 @@ function Report({ result, label, setLabel, busy, onPublish }) {
 
       <div className="mt-5 flex flex-wrap items-center gap-3">
         <button className="primary" onClick={onPublish} disabled={busy}>
-          {busy ? 'Publishing…' : 'Publish — replace the live version'}
+          {busy ? 'Publishing…' : `Publish${school && school !== 'ALL' ? ' to ' + school : ''} — replace the live version`}
         </button>
         <span className="text-[12px]" style={{ color: 'var(--tx-3)' }}>
           This replaces what everyone currently sees.

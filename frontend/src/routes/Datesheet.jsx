@@ -156,8 +156,10 @@ function DatesheetBuilder({ data, label, timetable, school, onChangeSchool, canC
 
   const progList = useMemo(() => {
     if (!offerings) return []
-    const present = new Set(offerings.map((o) => o.prog))
-    return PROG_ORDER.filter((p) => present.has(p))
+    // Derived from the data — see the note in Timetable.jsx.
+    const present = [...new Set(offerings.map((o) => o.prog))].filter(Boolean)
+    const rank = (p) => { const i = PROG_ORDER.indexOf(p); return i === -1 ? PROG_ORDER.length : i }
+    return present.sort((a, b) => rank(a) - rank(b) || a.localeCompare(b))
   }, [offerings])
 
   const yearsForProg = useMemo(() => {

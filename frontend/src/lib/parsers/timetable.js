@@ -1,18 +1,22 @@
 /**
- * Parses the FSC class-timetable workbook into the shape the Timetable
- * builder consumes: { days, periods, offerings }.
+ * Parses a class-timetable workbook into the shape the Timetable builder
+ * consumes: { days, periods, offerings }.
  *
- * Source of truth is the per-program course-list sheets (CS, SE, DS, AI, CY,
- * CI) — NOT the "Combined TT" room grid. The grid is a rendered view that has
- * already lost course codes, full titles and the block grouping that tells us
- * whether a course is core, a repeat, or an elective.
+ * Every school keeps its own workbook and no two are laid out alike, so nothing
+ * here is addressed by name or position:
  *
- * Each program sheet is a flat list of course rows interrupted by "block
- * header" rows (column A empty, column B holding a label such as
- * "BS(CS)-2026", "Labs", "Repeat Courses" or "SE Elective-IV"). Those headers
- * carry two pieces of state that the rows beneath them inherit: which bucket
- * the courses fall into, and which batch they belong to (which in turn decides
- * their colour).
+ *  - The course-list sheets are found by their header row (Code + Course Title
+ *    + Section), not by sheet name — Computing calls them CS, SE, DS, AI, CY,
+ *    CI; Management has a single "Course List".
+ *  - Columns are located by their heading. Computing puts Code/Title/Section
+ *    first and carries the schedule beside them; Management puts them at 5, 6
+ *    and 7 behind Batch/Semester/Core-or-Elective.
+ *  - Where a course list has no Day/Slot/Venue columns at all, as Management's
+ *    does not, the schedule is recovered from the room-by-time grid and joined
+ *    back on course title and section.
+ *
+ * The room-by-time grid is never used as the catalogue, only as the schedule:
+ * it has already lost course codes, full titles and the core/elective split.
  */
 
 import * as XLSX from 'xlsx'
@@ -49,21 +53,39 @@ const DEFAULT_PERIODS = [
 /** Colour used for batches missing from the ColorData sheet. */
 const FALLBACK_COLOR = { bg: '#e5e7eb', text: '#111827' }
 
-// Column indexes in the program sheets (header row is row 2).
-const COL = {
-  code: 0, // A
-  title: 1, // B
-  section: 2, // C
-  instructor: 3, // D — full name, e.g. "Ms. Maham Naeem"
-  shortTitle: 8, // I
-  shortInstructor: 9, // J — abbreviated, e.g. "Maham N"
-  duration: 11, // L — "Duration in Minutes", stored as a string
-  day1: 12, // M
-  slot1: 13, // N
-  venue1: 14, // O
-  day2: 15, // P
-  slot2: 16, // Q
-  venue2: 17, // R
+/*
+ * Column layout is not fixed. Computing lists Code / Course Title / Section in
+ * the first three columns and carries the schedule alongside; Management puts
+ * them at 5, 6 and 7 behind Batch / Semester / Core-or-Elective, and has no
+ * schedule columns at all. So columns are located by their heading.
+ */
+const COLUMN_ALIASES = {
+  code: ['code'],
+  title: ['course title'],
+  section: ['section'],
+  instructor: ['instructor name', 'teacher'],
+  shortTitle: ['course short title'],
+  shortInstructor: ['instructor short name'],
+  duration: ['duration in minutes'],
+  day1: ['day 1'], slot1: ['slot 1'], venue1: ['venue 1'],
+  day2: ['day 2'], slot2: ['slot 2'], venue2: ['venue 2'],
+  semester: ['semester'],
+  // Only an explicit core/elective column. Computing's "Category" is unusable
+  // for this — "SE (Elective)" appears under non-elective headings.
+  category: ['core / elective', 'core/elective'],
+}
+
+const normaliseHeader = (v) => (clean(v) || '').toLowerCase().replace(/\s+/g, ' ').replace(/[.:]+$/, '')
+
+/** Map each known field to the column it occupies in this sheet's header row. */
+function resolveColumns(headerCells) {
+  const seen = headerCells.map(normaliseHeader)
+  const cols = {}
+  for (const [field, names] of Object.entries(COLUMN_ALIASES)) {
+    const i = seen.findIndex((h) => names.includes(h))
+    if (i !== -1) cols[field] = i
+  }
+  return cols
 }
 
 const DAY_ALIASES = {
@@ -115,10 +137,10 @@ function bucketFromHeader(label) {
   return null
 }
 
-/** "BCS-1A" / "BSE-1A1" -> { prog: "BCS", sem: 1 }. */
+/** "BCS-1A" -> { prog: "BCS", sem: 1 }. Codes may carry digits, e.g. "MB2-3A". */
 function parseSection(primSection) {
   if (!primSection) return null
-  const m = /^([A-Za-z]{3})-(\d)/.exec(primSection)
+  const m = /^([A-Za-z][A-Za-z0-9]{1,4})-(\d)/.exec(primSection)
   if (!m) return null
   return { prog: m[1].toUpperCase(), sem: Number(m[2]) }
 }
@@ -132,7 +154,7 @@ function parseSection(primSection) {
 function toPrimSection(sectionRaw) {
   if (!sectionRaw) return null
   const first = sectionRaw.split('/')[0].trim()
-  const m = /^([A-Za-z]{3}-\d[A-Za-z])/.exec(first)
+  const m = /^([A-Za-z][A-Za-z0-9]{1,4}-\d[A-Za-z])/.exec(first)
   return m ? m[1].toUpperCase() : first
 }
 
@@ -143,19 +165,26 @@ function toPrimSection(sectionRaw) {
  * That "nothing else" test is what distinguishes it from a genuine course that
  * merely lacks a timetable slot (e.g. "SE4091 Final Year Project-I, BSE-7A").
  */
-function detectHeaderLabel(row, code, titleCell) {
+function detectHeaderLabel(row, cols) {
+  const code = cell(row, cols.code)
+  const title = cell(row, cols.title)
+
   const hasCourseDetail =
-    cell(row, COL.section) ||
-    cell(row, COL.shortTitle) ||
-    cell(row, COL.shortInstructor) ||
-    cell(row, COL.day1) ||
-    cell(row, COL.slot1)
+    cell(row, cols.section) ||
+    cell(row, cols.shortTitle) ||
+    cell(row, cols.shortInstructor) ||
+    cell(row, cols.instructor) ||
+    cell(row, cols.day1) ||
+    cell(row, cols.slot1)
 
   if (hasCourseDetail) return null
-  // Label in column A with no title beside it.
-  if (code && !titleCell) return code
-  // Label in column B with no code beside it.
-  if (!code && titleCell) return titleCell
+  if (code && !title) return code
+  if (!code && title) return title
+  if (!code && !title) {
+    // Management writes its programme headings in the first column, well to
+    // the left of the course columns, so nothing above finds them.
+    return (row || []).map(clean).find(Boolean) || null
+  }
   return null
 }
 
@@ -202,17 +231,124 @@ function findProgramSheets(workbook, readRows) {
     const rows = readRows(name)
     if (!rows || rows.length < 3) continue
 
-    for (let r = 0; r < Math.min(rows.length, 6); r++) {
-      const cells = (rows[r] || []).map((v) => (clean(v) || '').toLowerCase())
-      const has = (needle) => cells.some((c) => c === needle || c.startsWith(needle))
-      if (has('code') && has('course title') && has('section')) {
-        found.push({ name, headerRow: r })
+    for (let r = 0; r < Math.min(rows.length, 8); r++) {
+      const cols = resolveColumns(rows[r] || [])
+      if (cols.code !== undefined && cols.title !== undefined && cols.section !== undefined) {
+        found.push({ name, headerRow: r, cols })
         break
       }
     }
   }
 
   return found
+}
+
+
+/* ------------------------------------------------------------- time bands */
+
+/**
+ * "08:30-10:00", "8:30 AM to 9:50 AM", "1:00 PM to 2:20 PM." and
+ * "6:00 P.M.to 9:00 PM" all have to come out as the same thing.
+ */
+function parseTimeRange(text) {
+  const s = String(text ?? '').toLowerCase().replace(/\./g, '')
+  const re = /(\d{1,2}):(\d{2})\s*(am|pm)?/g
+  const found = []
+  let m
+  while ((m = re.exec(s)) !== null && found.length < 2) {
+    let h = Number(m[1])
+    const mins = Number(m[2])
+    if (m[3] === 'pm' && h !== 12) h += 12
+    if (m[3] === 'am' && h === 12) h = 0
+    found.push(h * 60 + mins)
+  }
+  if (found.length < 2) return null
+  let [from, to] = found
+  // "1:00 - 2:20" with no am/pm on a sheet that means the afternoon.
+  if (to <= from) to += 12 * 60
+  return to > from ? { from, to } : null
+}
+
+/**
+ * Locates the room-by-time grid: the sheet with a Days column, a Room column
+ * and a row of time bands. Both schools have one; only the details differ —
+ * Computing puts the bands one row above the Days/Room header, Management puts
+ * them on the same row.
+ */
+function findGridSheet(workbook, readRows) {
+  for (const name of workbook.SheetNames) {
+    const rows = readRows(name)
+    if (!rows || rows.length < 5) continue
+
+    let daysRow = -1
+    let dayCol = -1
+    let roomCol = -1
+    for (let r = 0; r < Math.min(rows.length, 8); r++) {
+      const cells = (rows[r] || []).map(normaliseHeader)
+      const d = cells.findIndex((c) => c === 'days' || c === 'day')
+      const room = cells.findIndex((c) => c === 'room' || c === 'rooms')
+      if (d !== -1 && room !== -1) { daysRow = r; dayCol = d; roomCol = room; break }
+    }
+    if (daysRow === -1) continue
+
+    // The bands sit on the Days row or just above it.
+    let bands = []
+    for (let r = daysRow; r >= 0 && r >= daysRow - 3; r--) {
+      const found = []
+      ;(rows[r] || []).forEach((v, col) => {
+        const range = parseTimeRange(v)
+        if (range) found.push({ col, ...range })
+      })
+      if (found.length >= 3) { bands = found; break }
+    }
+    if (bands.length < 3) continue
+
+    return { name, rows, daysRow, dayCol, roomCol, bands }
+  }
+  return null
+}
+
+/**
+ * Reads the schedule out of the grid, for workbooks whose course list carries
+ * none. Each cell reads "Course (Section) Teacher" — Computing separates the
+ * teacher with a colon, Management with a space — and its column decides the
+ * band while its row decides the day and room.
+ */
+function readGridSchedule(grid) {
+  const entries = []
+  let day = null
+
+  for (let r = grid.daysRow + 1; r < grid.rows.length; r++) {
+    const row = grid.rows[r]
+    if (!row) continue
+    const maybeDay = normaliseDay(row[grid.dayCol])
+    if (maybeDay) day = maybeDay // the day is written once per band of rows
+    const room = cell(row, grid.roomCol)
+    if (!day) continue
+
+    row.forEach((raw, col) => {
+      if (col === grid.dayCol || col === grid.roomCol) return
+      const text = clean(raw)
+      if (!text) return
+      const m = /^(.+?)\s*\(([^)]+)\)\s*:?\s*(.*)$/.exec(text)
+      if (!m) return
+
+      // The band is the last one starting at or before this column.
+      let band = null
+      for (const b of grid.bands) if (b.col <= col && (!band || b.col > band.col)) band = b
+      if (!band) return
+
+      entries.push({
+        day,
+        room: room || 'TBA',
+        title: m[1].trim(),
+        section: m[2].trim(),
+        teacher: m[3].trim() || null,
+        band,
+      })
+    })
+  }
+  return entries
 }
 
 /**
@@ -240,23 +376,6 @@ export function sessionFor(date) {
 /** Semester number -> academic year. Semesters 1&2 are year 1, and so on. */
 function semToYear(sem) {
   return Math.ceil(sem / 2)
-}
-
-/** Read the eight period bands out of the "Combined TT" sheet, if present. */
-function readPeriods(rows) {
-  const found = []
-  for (const row of rows.slice(0, 8)) {
-    if (!row) continue
-    for (const raw of row) {
-      const s = clean(raw)
-      if (s && /^\d{1,2}:\d{2}\s*-\s*\d{1,2}:\d{2}$/.test(s)) {
-        const normalised = s.replace(/\s*-\s*/, '-')
-        if (!found.includes(normalised)) found.push(normalised)
-      }
-    }
-    if (found.length >= 4) break
-  }
-  return found.length ? found : null
 }
 
 /** Read the batch -> colour map out of the "ColorData" sheet. */
@@ -306,9 +425,11 @@ export function parseTimetable(workbook, { now = new Date() } = {}) {
     return rows
   }
 
-  const combined = sheetRows('Combined TT')
-  const periodTimes = (combined && readPeriods(combined)) || DEFAULT_PERIODS
-  if (!combined) warnings.add('Sheet "Combined TT" not found — using default period times')
+  const grid = findGridSheet(workbook, sheetRows)
+  const periodTimes = grid
+    ? grid.bands.map((b) => `${fromMinutes(b.from)}-${fromMinutes(b.to)}`)
+    : DEFAULT_PERIODS
+  if (!grid) warnings.add('No room-by-time grid found — using default period times')
 
   const periods = periodTimes.map((t, i) => ({ p: i + 1, t }))
 
@@ -347,8 +468,8 @@ export function parseTimetable(workbook, { now = new Date() } = {}) {
   // The banner, e.g. "…TIME TABLE Fall 2026 (V1.0.2)". Only the version tag is
   // taken from it now; its year is not trusted for anything.
   let banner = null
-  if (combined) {
-    for (const row of combined.slice(0, 3)) {
+  if (grid) {
+    for (const row of grid.rows.slice(0, 3)) {
       for (const raw of row || []) {
         const s = clean(raw)
         if (s && /time\s*table/i.test(s)) {
@@ -387,12 +508,12 @@ export function parseTimetable(workbook, { now = new Date() } = {}) {
   const sessionYear = session.intakeYear
 
   const batchYears = []
-  for (const { name, headerRow } of programSheets) {
+  for (const { name, headerRow, cols } of programSheets) {
     const rows = sheetRows(name)
     for (let r = headerRow + 1; r < rows.length; r++) {
       const row = rows[r]
       if (isBlankRow(row)) continue
-      const headerLabel = detectHeaderLabel(row, cell(row, COL.code), cell(row, COL.title))
+      const headerLabel = detectHeaderLabel(row, cols)
       if (headerLabel === null) continue
       const y = batchYearFromHeader(headerLabel)
       if (y) batchYears.push(y)
@@ -413,7 +534,7 @@ export function parseTimetable(workbook, { now = new Date() } = {}) {
   const byKey = new Map()
   let nextId = 1
 
-  for (const { name: sheetName, headerRow } of programSheets) {
+  for (const { name: sheetName, headerRow, cols } of programSheets) {
     const rows = sheetRows(sheetName)
 
     let bucket = 'main'
@@ -424,13 +545,14 @@ export function parseTimetable(workbook, { now = new Date() } = {}) {
       const row = rows[r]
       if (isBlankRow(row)) continue
 
-      const code = cell(row, COL.code)
-      const titleCell = cell(row, COL.title)
+      const code = cell(row, cols.code)
+      const titleCell = cell(row, cols.title)
 
-      // Block headers are lone labels on an otherwise empty row. The workbook
-      // is inconsistent about which column holds them: batch headings sit in
-      // column B, while sub-headings ("Labs", "Repeat Courses") sit in column A.
-      const headerLabel = detectHeaderLabel(row, code, titleCell)
+      // Block headers are lone labels on an otherwise empty row. Which column
+      // holds them varies: Computing's batch headings sit in column B and its
+      // sub-headings ("Labs", "Repeat Courses") in column A, while Management
+      // writes programme headings to the left of the course columns entirely.
+      const headerLabel = detectHeaderLabel(row, cols)
       if (headerLabel !== null) {
         const b = bucketFromHeader(headerLabel)
         if (b) bucket = b
@@ -442,7 +564,21 @@ export function parseTimetable(workbook, { now = new Date() } = {}) {
       }
       if (!code) continue
 
-      const sectionRaw = cell(row, COL.section)
+      /*
+       * Where the sheet states core-or-elective per row, that is better than
+       * inferring it from a block heading. Management has such a column ("C" /
+       * "E"); Computing does not, and its "Category" column cannot be used —
+       * "SE (Elective)" appears under non-elective headings — so there the
+       * block heading still decides.
+       */
+      const categoryCell = cols.category !== undefined ? cell(row, cols.category) : null
+      const rowBucket = /^e/i.test(categoryCell || '')
+        ? 'elective'
+        : /^c/i.test(categoryCell || '')
+          ? 'main'
+          : bucket
+
+      const sectionRaw = cell(row, cols.section)
       if (isAnnotationRow(code, sectionRaw)) {
         warnings.add('Skipped a note row (no section and no valid course code)', `${sheetName} "${code}"`)
         continue
@@ -476,7 +612,7 @@ export function parseTimetable(workbook, { now = new Date() } = {}) {
       year = Math.min(Math.max(year, 1), 5)
 
       // "Duration in Minutes" arrives as a string, and is per class meeting.
-      let duration = Number(String(cell(row, COL.duration) ?? '').replace(/[^\d]/g, '')) || null
+      let duration = Number(String(cell(row, cols.duration) ?? '').replace(/[^\d]/g, '')) || null
       if (duration && duration > MAX_SENSIBLE_DURATION) {
         warnings.add(
           `Implausible duration of ${duration} minutes — treated as a single slot`,
@@ -487,8 +623,8 @@ export function parseTimetable(workbook, { now = new Date() } = {}) {
 
       const meetings = []
       for (const [dayCol, slotCol, venueCol] of [
-        [COL.day1, COL.slot1, COL.venue1],
-        [COL.day2, COL.slot2, COL.venue2],
+        [cols.day1, cols.slot1, cols.venue1],
+        [cols.day2, cols.slot2, cols.venue2],
       ]) {
         const day = normaliseDay(row?.[dayCol])
         const time = normaliseTime(row?.[slotCol])
@@ -529,14 +665,14 @@ export function parseTimetable(workbook, { now = new Date() } = {}) {
         warnings.add('No colour defined for batch — using grey', colorKey)
       }
 
-      const courseName = cell(row, COL.shortTitle) || titleCell || code
+      const courseName = cell(row, cols.shortTitle) || titleCell || code
 
       // The same class can be split across consecutive rows, one per weekly
       // meeting (CL3001 for BDS-7B is listed twice, same course, two slots).
       // The course name has to be part of the key: a code is not unique — the
       // lecture and its lab share one (DS3004 = "DWBI" and "DWBI Lab"), and
       // placeholder codes like CSXXXX cover four different MCI courses.
-      const dedupeKey = [prog, year, bucket, code, section, courseName].join('|')
+      const dedupeKey = [prog, year, rowBucket, code, section, courseName].join('|')
       const existing = byKey.get(dedupeKey)
       if (existing) {
         for (const m of meetings) {
@@ -553,18 +689,18 @@ export function parseTimetable(workbook, { now = new Date() } = {}) {
         id: `o${nextId++}`,
         code,
         course: courseName,
-        title: titleCell || cell(row, COL.shortTitle) || code,
+        title: titleCell || cell(row, cols.shortTitle) || code,
         section,
         primSection,
         prog,
         year,
-        bucket,
+        bucket: rowBucket,
         // Two names are kept because they serve different places: the blocks
         // are narrow and want the abbreviation, while the tooltip has room for
         // who the teacher actually is. Neither column is complete, so each
         // falls back to the other.
-        instructor: cell(row, COL.shortInstructor) || cell(row, COL.instructor) || 'TBA',
-        instructorFull: cell(row, COL.instructor) || cell(row, COL.shortInstructor) || 'TBA',
+        instructor: cell(row, cols.shortInstructor) || cell(row, cols.instructor) || 'TBA',
+        instructorFull: cell(row, cols.instructor) || cell(row, cols.shortInstructor) || 'TBA',
         bg: color?.bg || FALLBACK_COLOR.bg,
         text: color?.text || FALLBACK_COLOR.text,
         unslotted: meetings.length === 0,
@@ -573,6 +709,69 @@ export function parseTimetable(workbook, { now = new Date() } = {}) {
       byKey.set(dedupeKey, offering)
       offerings.push(offering)
     }
+  }
+
+  /*
+   * Workbooks whose course list has no Day/Slot/Venue columns keep their
+   * schedule only in the grid. Management is one: its course list is the
+   * authoritative catalogue — codes, titles, sections, teachers, core-or-
+   * elective — and the grid is where those courses are actually placed.
+   *
+   * They are joined on course title and section, which is all the grid gives.
+   * Section is matched through toPrimSection so a grid entry for a lab
+   * sub-group ("BAF-1A1") finds its parent section ("BAF-1A").
+   */
+  const needsGridSchedule = offerings.length > 0 && offerings.every((o) => o.meetings.length === 0)
+  if (needsGridSchedule && grid) {
+    const key = (title, section) =>
+      `${(title || '').toLowerCase().replace(/[^a-z0-9]/g, '')}|${toPrimSection(section) || ''}`
+
+    const byTitleSection = new Map()
+    for (const o of offerings) {
+      const k = key(o.title, o.section)
+      if (!byTitleSection.has(k)) byTitleSection.set(k, [])
+      byTitleSection.get(k).push(o)
+      // Short titles are what the grid tends to use.
+      const ks = key(o.course, o.section)
+      if (ks !== k) {
+        if (!byTitleSection.has(ks)) byTitleSection.set(ks, [])
+        byTitleSection.get(ks).push(o)
+      }
+    }
+
+    let placed = 0
+    let unmatched = 0
+    for (const entry of readGridSchedule(grid)) {
+      const matches = byTitleSection.get(key(entry.title, entry.section))
+      if (!matches || !matches.length) {
+        unmatched++
+        warnings.add('A grid entry matches no course in the list', `${entry.title} (${entry.section})`)
+        continue
+      }
+      const meeting = {
+        day: entry.day,
+        period: grid.bands.indexOf(entry.band) + 1,
+        time: `${fromMinutes(entry.band.from)}-${fromMinutes(entry.band.to)}`,
+        room: entry.room,
+        start: fromMinutes(entry.band.from),
+        end: fromMinutes(entry.band.to),
+        duration: entry.band.to - entry.band.from,
+        span: 1,
+      }
+      for (const o of matches) {
+        const already = o.meetings.some(
+          (m) => m.day === meeting.day && m.period === meeting.period && m.room === meeting.room,
+        )
+        if (!already) o.meetings.push(meeting)
+      }
+      placed++
+    }
+    for (const o of offerings) o.unslotted = o.meetings.length === 0
+
+    warnings.add(
+      `Schedule taken from the grid: ${placed} entries placed` +
+        (unmatched ? `, ${unmatched} could not be matched to a course` : ''),
+    )
   }
 
   if (!offerings.length) {

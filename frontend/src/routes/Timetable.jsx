@@ -132,8 +132,13 @@ function TimetableBuilder({ data, label, school, onChangeSchool, canChangeSchool
 
   /* ---------- derived indexes ---------- */
   const progList = useMemo(() => {
-    const present = new Set(offerings.map(o => o.prog));
-    return PROG_ORDER.filter(p => present.has(p));
+    // Taken from the data, not from a fixed list. Filtering a hardcoded
+    // PROG_ORDER meant any programme not in it simply vanished, so a school
+    // whose programmes are BAF, BBA and BFT showed an empty funnel. Known
+    // codes keep their familiar order; anything else follows, alphabetically.
+    const present = [...new Set(offerings.map(o => o.prog))].filter(Boolean);
+    const rank = p => { const i = PROG_ORDER.indexOf(p); return i === -1 ? PROG_ORDER.length : i; };
+    return present.sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
   }, [offerings]);
 
   const yearsForProg = useMemo(() => {
